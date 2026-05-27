@@ -294,7 +294,7 @@ function doLogin(){
 // ══ RENDER ══
 function R(){
   document.getElementById("app").innerHTML=html();
-  bind();
+  setTimeout(bind, 0);
 }
 
 function e(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
@@ -594,20 +594,29 @@ function bind(){
   // 新增隊伍
   var ntn=document.getElementById("ntnIn");
   var atb=document.getElementById("addTeamBtn");
-  if(ntn)ntn.addEventListener("input",function(){S.ntn=this.value;});
-  if(ntn)ntn.addEventListener("keydown",function(ev){if(ev.key==="Enter")addTeam();});
-  if(atb)atb.addEventListener("click",addTeam);
+  if(ntn){
+    ntn.addEventListener("input",function(){S.ntn=this.value;});
+    ntn.addEventListener("keydown",function(ev){if(ev.key==="Enter"){S.ntn=ntn.value;addTeam();}});
+  }
+  if(atb)atb.addEventListener("click",function(){S.ntn=document.getElementById("ntnIn")?document.getElementById("ntnIn").value:S.ntn;addTeam();});
   // 新增成員（所有 nmi_ 前綴）
   Object.keys(S.teams).forEach(function(team){
     var inp=document.getElementById("nmi_"+team);
     if(inp){
       inp.addEventListener("input",function(){S.nmi[team]=this.value;});
-      inp.addEventListener("keydown",function(ev){if(ev.key==="Enter")addMember(team);});
+      inp.addEventListener("keydown",function(ev){
+        if(ev.key==="Enter"){S.nmi[team]=inp.value;addMember(team);}
+      });
     }
   });
   // 新增成員按鈕
   document.querySelectorAll("[data-addmb]").forEach(function(btn){
-    btn.addEventListener("click",function(){addMember(this.dataset.addmb);});
+    btn.addEventListener("click",function(){
+      var team=this.dataset.addmb;
+      var inp=document.getElementById("nmi_"+team);
+      if(inp)S.nmi[team]=inp.value;
+      addMember(team);
+    });
   });
   // 刪除成員
   document.querySelectorAll("[data-delmb-team]").forEach(function(btn){
