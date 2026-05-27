@@ -7,8 +7,9 @@
 
 <!-- Firebase SDK -->
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+// dynamic import 確保模組載入後才執行，同時讓 window 指派正常運作
+const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+const { getDatabase, ref, set, get, onValue, remove } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
 // Cloudinary 處理照片，不需要 Firebase Storage
 
 // ════════════════════════════════════════════
@@ -606,7 +607,30 @@ function buildHTML() {
 function bindEvents() {}
 
 // ── 全域函式（HTML onclick 用）──
-window.state           = state;
+// 確保所有函式掛到 window（module script 需要明確指派）
+Object.assign(window, {
+  state,
+  setState        : (k, v) => { state[k] = v; render(); },
+  setEditTarget   : (k, v) => { state.editTarget[k] = v; render(); },
+  setNewMemberInput:(team,v)=> { state.newMemberInputs[team] = v; },
+  setConfirmTeam  : (t)    => { state.confirmTeam = t; render(); },
+  triggerFile     : (key)  => document.getElementById("file_"+key)?.click(),
+  removePhoto     : (key)  => { state.photos[key] = null; render(); },
+  handleFile      : (key, input) => { const f=input.files[0]; if(!f)return; state.photos[key]=f; render(); },
+  handleSubmit,
+  handleMoveDate,
+  handleDeleteRecord,
+  addTeam,
+  addMemberAction : addMember,
+  deleteMemberAction: deleteMember,
+  confirmDeleteTeam,
+  saveTeams,
+  tryAdminLogin   : () => {
+    if (state.adminPw === ADMIN_PW) { state.adminUnlocked = true; render(); }
+    else alert("密碼錯誤");
+  },
+});
+window.state = state;
 window.setState        = (k, v) => { state[k] = v; render(); };
 window.setEditTarget   = (k, v) => { state.editTarget[k] = v; render(); };
 window.setNewMemberInput = (team, v) => { state.newMemberInputs[team] = v; };
