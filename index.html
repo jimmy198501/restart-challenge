@@ -318,7 +318,7 @@ function R(){
   setTimeout(bind, 0);
 }
 
-function e(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
 function html(){
   var today=twToday(), day=actDay();
@@ -351,14 +351,14 @@ function htmlSubmit(today){
   var opts='<option value="">── 請選擇 ──</option>';
   Object.entries(S.teams).forEach(function(e){
     opts+='<optgroup label="'+e[0]+'">';
-    (e[1]||[]).forEach(function(m){opts+='<option value="'+e(m)+'"'+(m===S.sel?' selected':'')+'>'+e(m)+'</option>';});
+    (e[1]||[]).forEach(function(m){opts+='<option value="'+esc(m)+'"'+(m===S.sel?' selected':'')+'>'+esc(m)+'</option>';});
     opts+='</optgroup>';
   });
   var h='<div class="panel"><div class="ptitle">⚔️ 今日任務上傳</div>';
   h+='<div class="dbadge">📅 台灣時間今日：'+today+'</div>';
   h+='<div style="margin-bottom:20px"><label class="flabel">👤 選擇你的名字</label>';
   h+='<select class="sel" id="memSel">'+opts+'</select></div>';
-  if(S.sel&&already)h+='<div class="done-msg">✅ '+e(S.sel)+' 今天已完成任務！明天繼續打怪💪</div>';
+  if(S.sel&&already)h+='<div class="done-msg">✅ '+esc(S.sel)+' 今天已完成任務！明天繼續打怪💪</div>';
   if(S.sel&&!already){
     h+='<div class="grid4">';
     [{k:"p1",l:"新增群友",i:"👥"},{k:"p2",l:"暖群友",i:"🔥"},{k:"p3",l:"市調",i:"📋"},{k:"p4",l:"使用產品",i:"🌿"}].forEach(function(p){
@@ -380,7 +380,7 @@ function htmlSubmit(today){
     h+='</div>';
     h+='<div class="hint">💡 市調：居家購物清單 · 強連結 · 商展 · 評估　｜　🌿 使用產品：放群組照片或影片＋寫下感受</div>';
     h+='<button class="sbtn" id="submitBtn"'+(S.busy?' disabled':'')+'>'+( S.busy?'上傳中...':'⚔️ 完成今日任務！打怪！')+'</button>';
-    if(S.smsg)h+='<div class="msg '+(S.smsg.startsWith('🎉')?'ok':'err')+'">'+e(S.smsg)+'</div>';
+    if(S.smsg)h+='<div class="msg '+(S.smsg.startsWith('🎉')?'ok':'err')+'">'+esc(S.smsg)+'</div>';
   }
   h+='</div>';
   return h;
@@ -398,7 +398,7 @@ function htmlView(){
     var bc=mn>=21?"#2ecc71":mn>=14?"#e67e22":"#e74c3c";
     var unlock=mn>=21;
     h+='<div class="tblock">';
-    h+='<div class="thead"><span class="tname">'+e(team)+'</span><span class="tmin">全隊最低 '+mn+' 天</span></div>';
+    h+='<div class="thead"><span class="tname">'+esc(team)+'</span><span class="tmin">全隊最低 '+mn+' 天</span></div>';
     h+='<div class="thp"><span class="thp-em">👾</span>';
     h+='<div class="thp-track"><div class="thp-fill" style="width:'+Math.round(bhp)+'%;background:'+bc+'"></div></div>';
     h+='<span class="thp-lbl">Boss HP '+Math.round(bhp)+'%</span></div>';
@@ -421,7 +421,7 @@ function htmlView(){
         dots+='<div class="dot'+(S.records[m]&&S.records[m][k]?' on':'')+'" title="第'+(i+1)+'天 '+k+'"></div>';
       }
       h+='<div class="mcard">';
-      h+='<div class="mname">'+e(m)+'</div>';
+      h+='<div class="mname">'+esc(m)+'</div>';
       h+='<div class="mrow"><span class="mdays">'+d+' / '+TOTAL+' 天</span>';
       h+='<span class="rtag'+(earn?' lit':'')+'">'+(earn?'✅ 💰 報名費已達標':'🔒 還差'+(21-d)+'天拿回100元')+'</span></div>';
       h+='<div class="pbar-wrap"><div class="pbar-track"><div class="pbar-fill" style="width:'+pct+'%;background:#22d3ee"></div><span class="pbar-pct">'+Math.round(pct)+'%</span></div></div>';
@@ -467,7 +467,7 @@ function htmlAdmin(){
   td.forEach(function(x,i){
     var bg=i===0?"linear-gradient(90deg,#f5a623,#f0532a)":i===1?"linear-gradient(90deg,#a855f7,#6366f1)":"linear-gradient(90deg,#22d3ee,#06b6d4)";
     h+='<div class="rank-row"><div class="rank-med">'+(med[i]||"#"+(i+1))+'</div>';
-    h+='<div class="rank-tn">'+e(x.team)+'</div>';
+    h+='<div class="rank-tn">'+esc(x.team)+'</div>';
     h+='<div class="rank-bw"><div class="rank-b" style="width:'+(mx?Math.round(x.tot/mx*100):0)+'%;background:'+bg+'"></div>';
     h+='<span class="rank-bn">'+x.tot+' 天</span></div></div>';
   });
@@ -475,7 +475,7 @@ function htmlAdmin(){
   h+='<div class="rtable"><div class="rtable-h"><span>隊伍</span><span>總天數</span><span>平均</span><span>最低</span><span>獎勵</span></div>';
   td.forEach(function(x,i){
     var ul=x.min>=21?'<span style="font-size:16px">💰🥩</span>':'<span style="color:var(--mut)">—</span>';
-    h+='<div class="rtable-r'+(i===0?' f1':'')+'"><span>'+(med[i]||"#"+(i+1))+' '+e(x.team)+'</span>';
+    h+='<div class="rtable-r'+(i===0?' f1':'')+'"><span>'+(med[i]||"#"+(i+1))+' '+esc(x.team)+'</span>';
     h+='<span class="rnum">'+x.tot+'</span><span class="rnum">'+x.avg.toFixed(1)+'</span>';
     h+='<span class="rnum">'+x.min+'</span><span>'+ul+'</span></div>';
   });
@@ -483,9 +483,9 @@ function htmlAdmin(){
   h+='<div class="slbl" style="margin-top:16px">👤 各成員完成天數</div>';
   td.forEach(function(x){
     var sorted=[].concat(x.members).map(function(m){return{name:m,d:mdays(m)};}).sort(function(a,b){return b.d-a.d;});
-    h+='<div class="mdg"><div class="mdg-t">'+e(x.team)+'</div>';
+    h+='<div class="mdg"><div class="mdg-t">'+esc(x.team)+'</div>';
     sorted.forEach(function(m,i){
-      h+='<div class="mdg-r"><span class="mdg-rk">#'+(i+1)+'</span><span class="mdg-nm">'+e(m.name)+'</span>';
+      h+='<div class="mdg-r"><span class="mdg-rk">#'+(i+1)+'</span><span class="mdg-nm">'+esc(m.name)+'</span>';
       h+='<div class="mdg-bw"><div class="mdg-b" style="width:'+(m.d/TOTAL*100)+'%"></div>';
       h+='<div class="mdg-ml" style="left:'+(21/TOTAL*100)+'%"></div></div>';
       h+='<span class="mdg-n">'+m.d+' 天</span></div>';
@@ -499,32 +499,32 @@ function htmlAdmin(){
   if(S.tmOpen){
     h+='<div class="tmgmt-body">';
     if(S.ctm){
-      h+='<div class="cdlg"><span>確定刪除「'+e(S.ctm)+'」整隊？</span>';
+      h+='<div class="cdlg"><span>確定刪除「'+esc(S.ctm)+'」整隊？</span>';
       h+='<div class="cdlg-btns"><button class="cyes" id="delTeamYes">確定刪除</button>';
       h+='<button class="cno" id="delTeamNo">取消</button></div></div>';
     }
     Object.entries(S.teams).forEach(function(en){
       var team=en[0],mbs=en[1]||[];
       h+='<div class="tcard"><div class="tcard-h">';
-      h+='<span class="tcard-n">'+e(team)+'</span>';
+      h+='<span class="tcard-n">'+esc(team)+'</span>';
       h+='<span class="tcard-c">'+mbs.length+' 人</span>';
-      h+='<button class="tdel" data-delteam="'+e(team)+'">🗑️ 刪除整隊</button>';
+      h+='<button class="tdel" data-delteam="'+esc(team)+'">🗑️ 刪除整隊</button>';
       h+='</div><div class="tmbs">';
       if(mbs.length){
         mbs.forEach(function(m){
-          h+='<div class="mtag">'+e(m)+'<button data-delmb-team="'+e(team)+'" data-delmb-m="'+e(m)+'">✕</button></div>';
+          h+='<div class="mtag">'+esc(m)+'<button data-delmb-team="'+esc(team)+'" data-delmb-m="'+esc(m)+'">✕</button></div>';
         });
       }else{
         h+='<span style="color:var(--mut);font-size:12px">尚無成員</span>';
       }
       h+='</div><div class="add-row">';
-      h+='<input class="sel sm" id="nmi_'+e(team)+'" placeholder="輸入成員姓名" value="'+(S.nmi[team]||"")+'">';
-      h+='<button class="mbtn" data-addmb="'+e(team)+'">＋ 新增</button>';
+      h+='<input class="sel sm" id="nmi_'+esc(team)+'" placeholder="輸入成員姓名" value="'+(S.nmi[team]||"")+'">';
+      h+='<button class="mbtn" data-addmb="'+esc(team)+'">＋ 新增</button>';
       h+='</div></div>';
     });
     h+='<div class="new-team-box"><div class="flabel">新增隊伍</div>';
     h+='<div class="add-row">';
-    h+='<input class="sel sm" id="ntnIn" placeholder="隊伍名稱（例如：🐉 龍隊）" value="'+e(S.ntn)+'">';
+    h+='<input class="sel sm" id="ntnIn" placeholder="隊伍名稱（例如：🐉 龍隊）" value="'+esc(S.ntn)+'">';
     h+='<button class="mbtn" id="addTeamBtn">＋ 建立隊伍</button>';
     h+='</div></div>';
     h+='</div>';
@@ -533,8 +533,8 @@ function htmlAdmin(){
   // 移動日期
   var mopts='<option value="">請選擇</option>';
   Object.entries(S.teams).forEach(function(en){
-    mopts+='<optgroup label="'+e(en[0])+'">';
-    (en[1]||[]).forEach(function(m){mopts+='<option value="'+e(m)+'"'+(m===S.et.member?' selected':'')+'>'+e(m)+'</option>';});
+    mopts+='<optgroup label="'+esc(en[0])+'">';
+    (en[1]||[]).forEach(function(m){mopts+='<option value="'+esc(m)+'"'+(m===S.et.member?' selected':'')+'>'+esc(m)+'</option>';});
     mopts+='</optgroup>';
   });
   h+='<div class="move-sec"><div class="slbl">🗓️ 移動紀錄日期</div>';
@@ -544,7 +544,7 @@ function htmlAdmin(){
   h+='<div><div class="flabel">移至日期</div><input type="date" class="sel sm" id="etT" value="'+S.et.to+'"></div>';
   h+='<div style="justify-content:flex-end"><button class="mbtn" id="moveBtn">移動</button></div>';
   h+='</div>';
-  if(S.emsg)h+='<div class="msg '+(S.emsg.startsWith('✅')?'ok':'err')+'" style="margin-top:8px">'+e(S.emsg)+'</div>';
+  if(S.emsg)h+='<div class="msg '+(S.emsg.startsWith('✅')?'ok':'err')+'" style="margin-top:8px">'+esc(S.emsg)+'</div>';
   h+='</div>';
   // 逐人審核
   h+='<div class="slbl">📷 逐人審核</div>';
@@ -555,12 +555,12 @@ function htmlAdmin(){
     if(!dates.length)return;
     hasAny=true;
     h+='<details class="amem">';
-    h+='<summary>'+e(mb.name)+' <span class="atag">'+e(mb.team)+'</span><span class="acnt">'+dates.length+' 天</span></summary>';
+    h+='<summary>'+esc(mb.name)+' <span class="atag">'+esc(mb.team)+'</span><span class="acnt">'+dates.length+' 天</span></summary>';
     dates.forEach(function(date){
       var r=rec[date];
       h+='<div class="aday"><div class="aday-row"><span>📅 '+date+'</span>';
       if(r.adminMoved)h+='<span class="moved-tag">已移動</span>';
-      h+='<button class="dbtn" data-delrec-m="'+e(mb.name)+'" data-delrec-d="'+date+'">🗑️ 刪除</button></div>';
+      h+='<button class="dbtn" data-delrec-m="'+esc(mb.name)+'" data-delrec-d="'+date+'">🗑️ 刪除</button></div>';
       h+='<div class="aphotos">';
       [{k:"photo1",l:"👥 新增群友"},{k:"photo2",l:"🔥 暖群友"},{k:"photo3",l:"📋 市調"},{k:"photo4",l:"🌿 使用產品"}].forEach(function(p){
         h+='<div class="apw"><div class="aplbl">'+p.l+'</div>';
