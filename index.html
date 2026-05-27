@@ -4,705 +4,640 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>重啟行動力 1-1-1-1</title>
-
-<!-- Firebase compat（傳統模式，不需要 import，全域直接用）-->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-</head>
-<body>
-<div id="app">
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;background:#0a0a14">
-    <div style="font-size:64px;animation:bounce .6s infinite alternate">👾</div>
-    <div style="font-size:20px;color:#6b6b8a;font-family:sans-serif">載入戰場中...</div>
-  </div>
-</div>
-<style>@keyframes bounce{to{transform:translateY(-12px)}}</style>
-
-<script>
-// ══════════════════════════════
-//  Firebase 設定
-// ══════════════════════════════
-firebase.initializeApp({
-  apiKey:            "AIzaSyCrgMfdn79JOKx4XKA4hNwNZkhNACoizT4",
-  authDomain:        "restart-challenge-2026.firebaseapp.com",
-  databaseURL:       "https://restart-challenge-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId:         "restart-challenge-2026",
-  storageBucket:     "restart-challenge-2026.firebasestorage.app",
-  messagingSenderId: "477447792834",
-  appId:             "1:477447792834:web:c657ca4d3e612d1ccf335b"
-});
-const db = firebase.database();
-
-// ══════════════════════════════
-//  Cloudinary 設定
-// ══════════════════════════════
-const CLOUDINARY_CLOUD  = "dv2dmadr9";
-const CLOUDINARY_PRESET = "restart_challenge";
-
-// ══════════════════════════════
-//  常數
-// ══════════════════════════════
-const ADMIN_PW        = "jimmy0117";
-const TOTAL_DAYS      = 28;
-const ACT_START       = "2026-06-01";
-const ACT_END         = "2026-06-28";
-const PERSONAL_REWARD = { days:21, icon:"💰", label:"拿回報名費100元", color:"#7c3aed" };
-const TEAM_REWARD     = { days:21, icon:"🥩", label:"免費吃我家牛排！", color:"#b91c1c" };
-
-// ══════════════════════════════
-//  台灣時間
-// ══════════════════════════════
-function getTWToday() {
-  const tw = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Taipei"}));
-  return `${tw.getFullYear()}-${String(tw.getMonth()+1).padStart(2,"0")}-${String(tw.getDate()).padStart(2,"0")}`;
-}
-function getActivityDay() {
-  const tw    = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Taipei"}));
-  const start = new Date("2026-06-01T00:00:00");
-  const diff  = Math.floor((tw - start) / 86400000);
-  return (diff >= 0 && diff < TOTAL_DAYS) ? diff + 1 : null;
-}
-
-// ══════════════════════════════
-//  全域狀態
-// ══════════════════════════════
-var S = {
-  tab:"submit", teams:{}, records:{},
-  adminUnlocked:false, adminPw:"",
-  photos:{ photo1:null, photo2:null, photo3:null, photo4:null },
-  selMember:"", submitMsg:"", submitting:false,
-  editTarget:{ member:"", fromDate:"", toDate:"" }, editMsg:"",
-  confirmTeam:null, newTeamName:"", newMemberInputs:{}, teamMgrOpen:false,
-};
-
-// ══════════════════════════════
-//  Firebase 監聽
-// ══════════════════════════════
-db.ref("teams").on("value", snap => {
-  S.teams = snap.val() || {};
-  render();
-});
-db.ref("records").on("value", snap => {
-  S.records = snap.val() || {};
-  render();
-});
-
-// ══════════════════════════════
-//  計算函式
-// ══════════════════════════════
-function memberDays(member) {
-  const rec = S.records[member] || {};
-  return Object.keys(rec).filter(d => d >= ACT_START && d <= ACT_END).length;
-}
-function teamMinDays(team) {
-  const mbs = S.teams[team] || [];
-  if (!mbs.length) return 0;
-  return Math.min.apply(null, mbs.map(m => memberDays(m)));
-}
-function allMembers() {
-  return Object.entries(S.teams).flatMap(([t,mbs]) => (mbs||[]).map(m => ({name:m,team:t})));
-}
-function globalProgress() {
-  const all = allMembers();
-  if (!all.length) return 0;
-  return (all.reduce((a,m) => a + memberDays(m.name), 0) / (all.length * TOTAL_DAYS)) * 100;
-}
-
-// ══════════════════════════════
-//  Cloudinary 上傳
-// ══════════════════════════════
-async function uploadPhoto(file) {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("upload_preset", CLOUDINARY_PRESET);
-  const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {method:"POST",body:fd});
-  const data = await res.json();
-  if (!data.secure_url) throw new Error(data.error?.message || "上傳失敗");
-  return data.secure_url;
-}
-
-// ══════════════════════════════
-//  提交任務
-// ══════════════════════════════
-async function handleSubmit() {
-  const today = getTWToday();
-  if (!S.selMember) return showMsg("⚠️ 請選擇姓名");
-  if (!S.photos.photo1||!S.photos.photo2||!S.photos.photo3||!S.photos.photo4)
-    return showMsg("⚠️ 四張照片都要上傳才能完成任務！");
-  if (S.records[S.selMember]?.[today]) return showMsg("⚠️ 今天已提交過囉！");
-  S.submitting = true; showMsg("上傳中，請稍候⋯"); render();
-  try {
-    const [u1,u2,u3,u4] = await Promise.all([
-      uploadPhoto(S.photos.photo1), uploadPhoto(S.photos.photo2),
-      uploadPhoto(S.photos.photo3), uploadPhoto(S.photos.photo4),
-    ]);
-    await db.ref(`records/${S.selMember}/${today}`).set({
-      ts: new Date().toISOString(), photo1:u1, photo2:u2, photo3:u3, photo4:u4
-    });
-    S.photos = {photo1:null,photo2:null,photo3:null,photo4:null};
-    showMsg("🎉 任務完成！打倒今日怪物！");
-  } catch(e) { showMsg("❌ 上傳失敗：" + e.message); }
-  S.submitting = false; render();
-}
-function showMsg(m){ S.submitMsg=m; render(); }
-
-// ══════════════════════════════
-//  管理員：移動日期
-// ══════════════════════════════
-async function handleMoveDate() {
-  const {member,fromDate,toDate} = S.editTarget;
-  if (!member||!fromDate||!toDate) return showEditMsg("⚠️ 請填寫完整欄位");
-  if (fromDate===toDate) return showEditMsg("⚠️ 來源與目標日期相同");
-  const rec = (S.records[member]||{})[fromDate];
-  if (!rec) return showEditMsg("⚠️ 該成員在來源日期沒有紀錄");
-  if ((S.records[member]||{})[toDate]) return showEditMsg("⚠️ 目標日期已有紀錄");
-  await db.ref(`records/${member}/${toDate}`).set({...rec, adminMoved:true, movedAt:new Date().toISOString()});
-  await db.ref(`records/${member}/${fromDate}`).remove();
-  showEditMsg(`✅ 已將 ${member} 的 ${fromDate} 移至 ${toDate}`);
-  S.editTarget = {member:"",fromDate:"",toDate:""};
-}
-function showEditMsg(m){ S.editMsg=m; render(); }
-
-// ══════════════════════════════
-//  管理員：刪除紀錄
-// ══════════════════════════════
-async function handleDeleteRecord(member, date) {
-  await db.ref(`records/${member}/${date}`).remove();
-}
-
-// ══════════════════════════════
-//  隊伍管理
-// ══════════════════════════════
-async function saveTeams(data) {
-  await db.ref("teams").set(data);
-}
-async function addTeam() {
-  const name = S.newTeamName.trim();
-  if (!name || S.teams[name]) return;
-  const next = Object.assign({}, S.teams);
-  next[name] = [];
-  await saveTeams(next);
-  S.newTeamName = ""; render();
-}
-async function addMember(team) {
-  const name = (S.newMemberInputs[team]||"").trim();
-  if (!name||(S.teams[team]||[]).includes(name)) return;
-  const next = Object.assign({}, S.teams);
-  next[team] = [...(next[team]||[]), name];
-  await saveTeams(next);
-  S.newMemberInputs[team] = ""; render();
-}
-async function deleteMember(team, member) {
-  const next = Object.assign({}, S.teams);
-  next[team] = next[team].filter(m => m !== member);
-  await saveTeams(next);
-}
-async function confirmDeleteTeam() {
-  const t = S.confirmTeam; if (!t) return;
-  const next = Object.assign({}, S.teams);
-  delete next[t];
-  await saveTeams(next);
-  S.confirmTeam = null; render();
-}
-
-// ══════════════════════════════
-//  RENDER
-// ══════════════════════════════
-function render() {
-  document.getElementById("app").innerHTML = buildHTML();
-}
-
-function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-
-function buildHTML() {
-  var today  = getTWToday();
-  var actDay = getActivityDay();
-  var bossHP = Math.max(0, 100 - globalProgress());
-  var bossColor = bossHP > 60 ? "#e74c3c" : bossHP > 30 ? "#e67e22" : "#2ecc71";
-
-  // 分頁按鈕
-  var tabs = ["submit|⚔️ 提交任務","view|📊 查看進度","admin|🔑 管理員"].map(function(t){
-    var p=t.split("|"); return '<button class="tab-btn'+(S.tab===p[0]?" active":"")+'" onclick="S.tab=\''+p[0]+'\';render()">'+p[1]+'</button>';
-  }).join("");
-
-  var content = S.tab==="submit" ? buildSubmit(today)
-              : S.tab==="view"   ? buildView()
-              : buildAdmin();
-
-  return '<div class="bg-grid"></div>'
-    +'<header class="hero">'
-    +'<div class="hero-badge">⚔️ 21天打怪挑戰</div>'
-    +'<h1 class="hero-title">重啟行動力<br><span class="hero-sub">1 · 1 · 1 · 1</span></h1>'
-    +'<p class="hero-desc">6/1 – 6/28｜3人同行 21天｜完成任務 免費🥩請你吃</p>'
-    +'<div class="monster-hp"><div class="monster-emoji">👾</div>'
-    +'<div class="hp-track"><div class="hp-fill" style="width:'+Math.round(bossHP)+'%;background:'+bossColor+'"></div></div>'
-    +'<div class="hp-label">Boss HP '+Math.round(bossHP)+'%</div></div>'
-    +'<div class="hero-day">'+(actDay?'🗡️ 活動第 '+actDay+' 天 / '+TOTAL_DAYS+' 天':'活動期間：6/1 – 6/28')+'</div>'
-    +'</header>'
-    +'<nav class="tabs">'+tabs+'</nav>'
-    +'<main class="main">'+content+'</main>'
-    +'<footer class="footer">重啟行動力 1-1-1-1 ｜ 香綺大C ⚔️</footer>';
-}
-
-// ── 提交任務 ──
-function buildSubmit(today) {
-  var already = S.records[S.selMember] && S.records[S.selMember][today];
-  var opts = Object.entries(S.teams).map(function(e){
-    var team=e[0], mbs=e[1]||[];
-    return '<optgroup label="'+esc(team)+'">'+mbs.map(function(m){
-      return '<option value="'+esc(m)+'"'+(m===S.selMember?' selected':'')+'>'+esc(m)+'</option>';
-    }).join("")+'</optgroup>';
-  }).join("");
-
-  var photoBoxes = [
-    {key:"photo1",label:"新增群友",icon:"👥"},
-    {key:"photo2",label:"暖群友",icon:"🔥"},
-    {key:"photo3",label:"市調",icon:"📋"},
-    {key:"photo4",label:"使用產品",icon:"🌿"},
-  ].map(function(p){ return photoBox(p.key,p.label,p.icon); }).join("");
-
-  return '<div class="panel">'
-    +'<div class="panel-title">⚔️ 今日任務上傳</div>'
-    +'<div class="date-badge">📅 台灣時間今日：'+today+'</div>'
-    +'<div class="field"><label class="field-label">👤 選擇你的名字</label>'
-    +'<select class="select" onchange="S.selMember=this.value;S.submitMsg=\'\';render()">'
-    +'<option value="">── 請選擇 ──</option>'+opts+'</select></div>'
-    +(S.selMember && already ? '<div class="already-done">✅ '+esc(S.selMember)+' 今天已完成任務！明天繼續打怪💪</div>' : '')
-    +(S.selMember && !already ? '<div class="tasks-grid">'+photoBoxes+'</div>'
-      +'<div class="task-hint">💡 市調：居家購物清單 · 強連結 · 商展 · 評估　｜　🌿 使用產品：放群組照片或影片＋寫下感受</div>'
-      +'<button class="submit-btn'+(S.submitting?' loading':'')+'" onclick="handleSubmit()" '+(S.submitting?'disabled':'')+'>'+( S.submitting?'上傳中...':'⚔️ 完成今日任務！打怪！')+'</button>'
-      +(S.submitMsg?'<div class="msg '+(S.submitMsg.startsWith('🎉')?'success':'error')+'">'+esc(S.submitMsg)+'</div>':'')
-    : '')
-    +'</div>';
-}
-
-function photoBox(key,label,icon) {
-  var val = S.photos[key];
-  if (val) {
-    var src = (val instanceof File) ? URL.createObjectURL(val) : val;
-    return '<div class="upload-box uploaded">'
-      +'<div class="preview-wrap"><img src="'+src+'" class="preview-img"/>'
-      +'<div class="preview-badge">✅ '+label+'</div>'
-      +'<button class="remove-btn" onclick="S.photos[\''+key+'\']=null;render()">✕</button>'
-      +'</div></div>';
-  }
-  return '<div class="upload-box" onclick="document.getElementById(\'f_'+key+'\').click()">'
-    +'<div class="upload-placeholder">'
-    +'<span class="upload-icon">'+icon+'</span>'
-    +'<span class="upload-label">'+label+'</span>'
-    +'<span class="upload-hint">點擊上傳照片</span>'
-    +'</div>'
-    +'<input type="file" id="f_'+key+'" accept="image/*" style="display:none" '
-    +'onchange="var f=this.files[0];if(f){S.photos[\''+key+'\']=f;render()}">'
-    +'</div>';
-}
-
-// ── 查看進度 ──
-function buildView() {
-  if (!Object.keys(S.teams).length)
-    return '<div class="panel"><div class="panel-title">📊 戰況總覽</div>'
-      +'<div style="color:var(--muted);text-align:center;padding:40px">尚未設定隊伍，請管理員新增</div></div>';
-
-  var blocks = Object.entries(S.teams).map(function(e){
-    var team=e[0], mbs=e[1]||[];
-    var minDays = teamMinDays(team);
-    var minPct  = Math.min((minDays/21)*100,100);
-    var bossHPpct = Math.max(0,100-(minDays/21)*100);
-    var bossColor = minDays>=21?"#2ecc71":minDays>=14?"#e67e22":"#e74c3c";
-    var teamUnlocked = minDays>=21;
-
-    var cards = mbs.map(function(member){
-      var days = memberDays(member);
-      var pct  = (days/TOTAL_DAYS)*100;
-      var earned = days>=21;
-      var dots = "";
-      for(var i=0;i<TOTAL_DAYS;i++){
-        var d=new Date("2026-06-01"); d.setDate(d.getDate()+i);
-        var k=d.toISOString().split("T")[0];
-        var done = S.records[member] && S.records[member][k];
-        dots += '<div class="day-dot'+(done?' done':'')+'" title="第'+(i+1)+'天 '+k+'"></div>';
-      }
-      return '<div class="member-card">'
-        +'<div class="member-name">'+esc(member)+'</div>'
-        +'<div class="member-days-row-card">'
-        +'<span class="member-days">'+days+' / '+TOTAL_DAYS+' 天</span>'
-        +'<span class="personal-reward-tag'+(earned?' earned':'')+'">'+
-          (earned?'✅ 💰 報名費已達標':'🔒 還差'+(21-days)+'天拿回100元')
-        +'</span></div>'
-        +'<div class="progress-wrap"><div class="progress-track">'
-        +'<div class="progress-fill" style="width:'+pct+'%;background:#22d3ee"></div>'
-        +'<span class="progress-pct">'+Math.round(pct)+'%</span>'
-        +'</div></div>'
-        +'<div class="day-dots">'+dots+'</div>'
-        +'</div>';
-    }).join("");
-
-    return '<div class="team-block">'
-      +'<div class="team-header"><span class="team-name">'+esc(team)+'</span>'
-      +'<span class="team-min-days">全隊最低 '+minDays+' 天</span></div>'
-      +'<div class="team-monster-hp"><span class="team-monster-emoji">👾</span>'
-      +'<div class="team-hp-track"><div class="team-hp-fill" style="width:'+Math.round(bossHPpct)+'%;background:'+bossColor+'"></div></div>'
-      +'<span class="team-hp-label">Boss HP '+Math.round(bossHPpct)+'%</span></div>'
-      +'<div class="reward-banner-wrap">'
-      +'<div class="milestone-bar-wrap"><div class="milestone-track">'
-      +'<div class="milestone-fill" style="width:'+minPct+'%"></div>'
-      +'<div class="milestone-marker'+(minDays>=21?' reached':'')+'" style="left:100%;border-color:'+TEAM_REWARD.color+'"><span class="ms-icon">'+TEAM_REWARD.icon+'</span></div>'
-      +'</div><div class="milestone-labels" style="height:28px">'
-      +'<div class="ms-label'+(minDays>=21?' reached':'')+'" style="left:100%;color:'+TEAM_REWARD.color+'">21天<br>'+TEAM_REWARD.icon+TEAM_REWARD.label+'</div>'
-      +'</div></div>'
-      +'<div class="team-reward-badge'+(teamUnlocked?' unlocked':' locked')+'"'
-      +(teamUnlocked?' style="border-color:'+TEAM_REWARD.color+';color:'+TEAM_REWARD.color+';background:'+TEAM_REWARD.color+'18"':'')+'>'
-      +(teamUnlocked?'✅ 全隊達標！'+TEAM_REWARD.icon+' '+TEAM_REWARD.label
-        :'🔒 全隊都完成21天 → '+TEAM_REWARD.icon+' '+TEAM_REWARD.label+'（還差'+(21-minDays)+'天）')
-      +'</div></div>'
-      +'<div class="members-grid">'+cards+'</div>'
-      +'</div>';
-  }).join("");
-
-  return '<div class="panel"><div class="panel-title">📊 戰況總覽</div>'+blocks+'</div>';
-}
-
-// ── 管理員 ──
-function buildAdmin() {
-  if (!S.adminUnlocked) return '<div class="panel">'
-    +'<div class="panel-title">🔑 管理員審核</div>'
-    +'<div class="admin-login">'
-    +'<input type="password" class="select" placeholder="輸入管理員密碼" '
-    +'id="adminPwInput">'
-    +'<button class="submit-btn" onclick="doAdminLogin()">解鎖</button>'
-    +'</div></div>';
-
-  var all = allMembers();
-  var totalCI = all.reduce(function(a,m){return a+memberDays(m.name);},0);
-
-  // 排名圖表
-  var teamData = Object.entries(S.teams).map(function(e){
-    var team=e[0], mbs=e[1]||[];
-    var tot=mbs.reduce(function(a,m){return a+memberDays(m);},0);
-    var min=mbs.length?Math.min.apply(null,mbs.map(function(m){return memberDays(m);})):0;
-    return {team:team,members:mbs,totalDays:tot,minDays:min,avgDays:mbs.length?tot/mbs.length:0};
-  }).sort(function(a,b){return b.totalDays-a.totalDays;});
-  var maxTotal = Math.max.apply(null, teamData.map(function(t){return t.totalDays;})||[1]);
-  var medals=["🥇","🥈","🥉"];
-
-  var rankBars = teamData.map(function(td,i){
-    var bg=i===0?"linear-gradient(90deg,#f5a623,#f0532a)":i===1?"linear-gradient(90deg,#a855f7,#6366f1)":"linear-gradient(90deg,#22d3ee,#06b6d4)";
-    return '<div class="rank-row"><div class="rank-medal">'+(medals[i]||"#"+(i+1))+'</div>'
-      +'<div class="rank-team-name">'+esc(td.team)+'</div>'
-      +'<div class="rank-bar-wrap"><div class="rank-bar" style="width:'+(maxTotal?Math.round(td.totalDays/maxTotal*100):0)+'%;background:'+bg+'"></div>'
-      +'<span class="rank-bar-num">'+td.totalDays+' 天</span></div></div>';
-  }).join("");
-
-  var rankRows = teamData.map(function(td,i){
-    var ul=[PERSONAL_REWARD,TEAM_REWARD].filter(function(ms){return td.minDays>=ms.days;});
-    return '<div class="rank-table-row'+(i===0?' rank-first':'')+'">'
-      +'<span>'+(medals[i]||"#"+(i+1))+' '+esc(td.team)+'</span>'
-      +'<span class="rank-num">'+td.totalDays+'</span>'
-      +'<span class="rank-num">'+td.avgDays.toFixed(1)+'</span>'
-      +'<span class="rank-num">'+td.minDays+'</span>'
-      +'<span>'+(ul.length?ul.map(function(ms){return '<span class="reward-chip">'+ms.icon+'</span>';}).join(""):'<span class="no-reward">—</span>')+'</span>'
-      +'</div>';
-  }).join("");
-
-  var memberDayGroups = teamData.map(function(td){
-    var sorted=[].concat(td.members).map(function(m){return {name:m,days:memberDays(m)};}).sort(function(a,b){return b.days-a.days;});
-    var rows=sorted.map(function(m,mi){
-      return '<div class="member-days-row">'
-        +'<span class="member-days-rank">#'+(mi+1)+'</span>'
-        +'<span class="member-days-name">'+esc(m.name)+'</span>'
-        +'<div class="member-days-bar-wrap">'
-        +'<div class="member-days-bar" style="width:'+(m.days/TOTAL_DAYS*100)+'%"></div>'
-        +'<div class="member-days-milestone" style="left:'+(21/TOTAL_DAYS*100)+'%"></div>'
-        +'</div><span class="member-days-num">'+m.days+' 天</span></div>';
-    }).join("");
-    return '<div class="member-days-group"><div class="member-days-team">'+esc(td.team)+'</div>'+rows+'</div>';
-  }).join("");
-
-  // 隊伍管理
-  var teamCards = Object.entries(S.teams).map(function(e){
-    var team=e[0], mbs=e[1]||[];
-    var tags=mbs.map(function(m){
-      return '<div class="team-mgmt-member-tag">'+esc(m)
-        +'<button onclick="deleteMember(\''+esc(team)+'\',\''+esc(m)+'\')">✕</button></div>';
-    }).join("");
-    return '<div class="team-mgmt-card">'
-      +'<div class="team-mgmt-header">'
-      +'<span class="team-mgmt-name">'+esc(team)+'</span>'
-      +'<span class="team-mgmt-count">'+mbs.length+' 人</span>'
-      +'<button class="team-mgmt-del-team" onclick="S.confirmTeam=\''+esc(team)+'\';render()">🗑️ 刪除整隊</button>'
-      +'</div><div class="team-mgmt-members">'+(tags||'<span style="color:var(--muted);font-size:12px">尚無成員</span>')+'</div>'
-      +'<div class="team-mgmt-add-row">'
-      +'<input class="select small" placeholder="輸入成員姓名" '
-      +'value="'+(S.newMemberInputs[team]||"")+'" '
-      +'data-member-input="'+esc(team)+'">'
-      +'<button class="move-btn" onclick="addMember(\''+esc(team)+'\')">＋ 新增</button>'
-      +'</div></div>';
-  }).join("");
-
-  var confirmDialog = S.confirmTeam
-    ? '<div class="confirm-dialog"><span>確定刪除「'+esc(S.confirmTeam)+'」整隊？</span>'
-      +'<div class="confirm-btns">'
-      +'<button class="confirm-yes" onclick="confirmDeleteTeam()">確定刪除</button>'
-      +'<button class="confirm-no" onclick="S.confirmTeam=null;render()">取消</button>'
-      +'</div></div>' : "";
-
-  // 審核
-  var reviews = all.map(function(m){
-    var rec=S.records[m.name]||{};
-    var dates=Object.keys(rec).sort();
-    if(!dates.length) return "";
-    var dayRows=dates.map(function(date){
-      var r=rec[date];
-      var photos=[
-        {key:"photo1",label:"👥 新增群友"},{key:"photo2",label:"🔥 暖群友"},
-        {key:"photo3",label:"📋 市調"},{key:"photo4",label:"🌿 使用產品"}
-      ].map(function(p){
-        return '<div class="admin-photo-wrap"><div class="admin-photo-label">'+p.label+'</div>'
-          +(r[p.key]?'<a href="'+r[p.key]+'" target="_blank"><img src="'+r[p.key]+'" class="admin-photo"/></a>'
-            :'<div class="admin-no-photo">未上傳</div>')+'</div>';
-      }).join("");
-      return '<div class="admin-day"><div class="admin-date-row"><span>📅 '+date+'</span>'
-        +(r.adminMoved?'<span class="moved-badge">已移動</span>':'')
-        +'<button class="delete-btn" onclick="handleDeleteRecord(\''+esc(m.name)+'\',\''+date+'\')">🗑️ 刪除</button>'
-        +'</div><div class="admin-photos">'+photos+'</div></div>';
-    }).join("");
-    return '<details class="admin-member">'
-      +'<summary class="admin-member-title">'+esc(m.name)
-      +' <span class="admin-team-tag">'+esc(m.team)+'</span>'
-      +'<span class="admin-count">'+dates.length+' 天</span></summary>'+dayRows+'</details>';
-  }).join("");
-
-  var memberOpts = Object.entries(S.teams).map(function(e){
-    return '<optgroup label="'+esc(e[0])+'">'+( e[1]||[]).map(function(m){
-      return '<option value="'+esc(m)+'"'+(m===S.editTarget.member?' selected':'')+'>'+esc(m)+'</option>';
-    }).join("")+'</optgroup>';
-  }).join("");
-
-  return '<div class="panel"><div class="panel-title">🔑 管理員審核</div><div class="admin-panel">'
-    // 統計
-    +'<div class="admin-stats">'
-    +'<div class="stat-card"><div class="stat-num">'+all.length+'</div><div class="stat-lbl">總成員</div></div>'
-    +'<div class="stat-card"><div class="stat-num">'+totalCI+'</div><div class="stat-lbl">總打卡次數</div></div>'
-    +'<div class="stat-card"><div class="stat-num">'+Math.round(globalProgress())+'%</div><div class="stat-lbl">全體完成率</div></div>'
-    +'</div>'
-    // 排名圖表
-    +'<div class="chart-section"><div class="section-title">🏆 隊伍排名（總打卡天數）</div>'
-    +'<div class="rank-chart">'+rankBars+'</div>'
-    +'<div class="rank-table"><div class="rank-table-head"><span>隊伍</span><span>總天數</span><span>平均</span><span>最低</span><span>獎勵</span></div>'+rankRows+'</div>'
-    +'<div class="section-title" style="margin-top:20px">👤 各成員完成天數</div>'+memberDayGroups+'</div>'
-    // 隊伍管理
-    +'<div class="team-mgmt-section">'
-    +'<button class="team-mgmt-toggle" onclick="S.teamMgrOpen=!S.teamMgrOpen;render()">👥 隊伍與成員管理 '+(S.teamMgrOpen?'▲':'▼')+'</button>'
-    +(S.teamMgrOpen?'<div class="team-mgmt-body">'+confirmDialog+teamCards
-      +'<div class="team-mgmt-new-team"><div class="field-label">新增隊伍</div>'
-      +'<div class="team-mgmt-add-row">'
-      +'<input class="select small" placeholder="隊伍名稱（例如：🐉 龍隊）" value="'+esc(S.newTeamName)+'" '
-      +'id="newTeamInput"'>'
-      +'<button class="move-btn" onclick="addTeam()">＋ 建立隊伍</button>'
-      +'</div></div></div>':'')
-    +'</div>'
-    // 移動日期
-    +'<div class="admin-move-section"><div class="section-title">🗓️ 移動紀錄日期</div>'
-    +'<div class="admin-move-grid">'
-    +'<div><div class="field-label">成員</div>'
-    +'<select class="select small" id="etMember">'
-    +'<option value="">請選擇</option>'+memberOpts+'</select></div>'
-    +'<div><div class="field-label">來源日期</div>'
-    +'<input type="date" class="select small" value="'+S.editTarget.fromDate+'" id="etFrom"></div>'
-    +'<div><div class="field-label">移至日期</div>'
-    +'<input type="date" class="select small" value="'+S.editTarget.toDate+'" id="etTo"></div>'
-    +'<div class="move-btn-wrap"><button class="move-btn" onclick="handleMoveDate()">移動</button></div>'
-    +'</div>'
-    +(S.editMsg?'<div class="msg '+(S.editMsg.startsWith('✅')?'success':'error')+'" style="margin-top:8px">'+esc(S.editMsg)+'</div>':'')
-    +'</div>'
-    // 逐人審核
-    +'<div class="section-title">📷 逐人審核</div>'
-    +(reviews||'<div style="color:var(--muted);font-size:13px;padding:20px 0">目前無人打卡</div>')
-    +'</div></div>';
-}
-
-function doAdminLogin() {
-  if (S.adminPw === ADMIN_PW) { S.adminUnlocked=true; render(); }
-  else { alert("密碼錯誤"); }
-}
-
-// 每次 render 後重新綁定所有輸入事件
-function bindEvents() {
-  // 管理員密碼
-  var pwInput = document.getElementById("adminPwInput");
-  if (pwInput) {
-    pwInput.value = S.adminPw;
-    pwInput.addEventListener("input", function(){ S.adminPw = this.value; });
-    pwInput.addEventListener("keydown", function(e){ if(e.key==="Enter") doAdminLogin(); });
-  }
-  // 新增隊伍輸入
-  var ntInput = document.getElementById("newTeamInput");
-  if (ntInput) {
-    ntInput.value = S.newTeamName;
-    ntInput.addEventListener("input", function(){ S.newTeamName = this.value; });
-    ntInput.addEventListener("keydown", function(e){ if(e.key==="Enter") addTeam(); });
-  }
-  // 成員選單
-  var selEl = document.getElementById("memberSelect");
-  if (selEl) {
-    selEl.addEventListener("change", function(){ S.selMember=this.value; S.submitMsg=""; render(); });
-  }
-  // 新增成員輸入（多個隊）
-  document.querySelectorAll("[data-member-input]").forEach(function(el){
-    var team = el.dataset.memberInput;
-    el.value = S.newMemberInputs[team] || "";
-    el.addEventListener("input", function(){ S.newMemberInputs[team] = this.value; });
-    el.addEventListener("keydown", function(e){ if(e.key==="Enter") addMember(team); });
-  });
-  // 移動日期欄位
-  var etMember = document.getElementById("etMember");
-  if (etMember) etMember.addEventListener("change", function(){ S.editTarget.member=this.value; });
-  var etFrom = document.getElementById("etFrom");
-  if (etFrom) etFrom.addEventListener("change", function(){ S.editTarget.fromDate=this.value; });
-  var etTo = document.getElementById("etTo");
-  if (etTo) etTo.addEventListener("change", function(){ S.editTarget.toDate=this.value; });
-}
-
-var _origRender = render;
-render = function() { _origRender(); bindEvents(); };
-
-// 初始 render
-render();
-</script>
-
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Orbitron:wght@700;900&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a0a14;--surface:#12121f;--card:#1a1a2e;--border:#2a2a4a;--accent:#f5a623;--accent2:#a855f7;--accent3:#22d3ee;--danger:#e74c3c;--success:#2ecc71;--text:#e8e8f0;--muted:#6b6b8a;--font-head:'Orbitron',sans-serif;--font-body:'Noto Sans TC',sans-serif}
-body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh}
-#app{position:relative;min-height:100vh}
+:root{--bg:#0a0a14;--sur:#12121f;--card:#1a1a2e;--bdr:#2a2a4a;--acc:#f5a623;--acc2:#a855f7;--acc3:#22d3ee;--red:#e74c3c;--grn:#2ecc71;--txt:#e8e8f0;--mut:#6b6b8a;--fh:'Orbitron',sans-serif;--fb:'Noto Sans TC',sans-serif}
+body{background:var(--bg);color:var(--txt);font-family:var(--fb);min-height:100vh}
+#app{min-height:100vh;position:relative}
 .bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(168,85,247,.04)1px,transparent 1px),linear-gradient(90deg,rgba(168,85,247,.04)1px,transparent 1px);background-size:40px 40px;pointer-events:none}
-.hero{position:relative;z-index:1;text-align:center;padding:48px 20px 32px;background:linear-gradient(180deg,rgba(168,85,247,.15)0%,transparent 100%);border-bottom:1px solid var(--border)}
-.hero-badge{display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.4);color:var(--accent);padding:4px 16px;border-radius:999px;font-size:12px;font-family:var(--font-head);letter-spacing:2px;margin-bottom:16px}
-.hero-title{font-family:var(--font-head);font-size:clamp(28px,6vw,56px);font-weight:900;line-height:1.1;background:linear-gradient(135deg,#f5a623,#f0532a,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+.hero{position:relative;z-index:1;text-align:center;padding:48px 20px 32px;background:linear-gradient(180deg,rgba(168,85,247,.15),transparent);border-bottom:1px solid var(--bdr)}
+.hero-badge{display:inline-block;background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.4);color:var(--acc);padding:4px 16px;border-radius:999px;font-size:12px;font-family:var(--fh);letter-spacing:2px;margin-bottom:16px}
+.hero-title{font-family:var(--fh);font-size:clamp(28px,6vw,56px);font-weight:900;line-height:1.1;background:linear-gradient(135deg,#f5a623,#f0532a,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
 .hero-sub{font-size:clamp(36px,8vw,72px);letter-spacing:8px}
-.hero-desc{color:var(--muted);font-size:14px;margin-bottom:24px}
-.hero-day{margin-top:12px;font-family:var(--font-head);font-size:13px;color:var(--accent3);letter-spacing:1px}
-.monster-hp{display:flex;align-items:center;gap:12px;max-width:480px;margin:0 auto;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
-.monster-emoji{font-size:32px}.hp-track{flex:1;height:12px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.hp-fill{height:100%;border-radius:6px;transition:width 1s ease}.hp-label{font-size:11px;color:var(--muted);white-space:nowrap}
-.tabs{position:relative;z-index:1;display:flex;border-bottom:1px solid var(--border);background:var(--surface)}
-.tab-btn{flex:1;padding:14px 8px;background:none;border:none;color:var(--muted);font-family:var(--font-body);font-size:14px;cursor:pointer;border-bottom:2px solid transparent}
-.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.hero-desc{color:var(--mut);font-size:14px;margin-bottom:24px}
+.hero-day{margin-top:12px;font-family:var(--fh);font-size:13px;color:var(--acc3)}
+.boss-hp{display:flex;align-items:center;gap:12px;max-width:480px;margin:0 auto;background:rgba(255,255,255,.04);border:1px solid var(--bdr);border-radius:12px;padding:12px 16px}
+.boss-em{font-size:32px}
+.hp-track{flex:1;height:12px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
+.hp-fill{height:100%;border-radius:6px;transition:width 1s}
+.hp-lbl{font-size:11px;color:var(--mut);white-space:nowrap}
+.tabs{position:relative;z-index:1;display:flex;border-bottom:1px solid var(--bdr);background:var(--sur)}
+.tab{flex:1;padding:14px 8px;background:none;border:none;color:var(--mut);font-family:var(--fb);font-size:14px;cursor:pointer;border-bottom:2px solid transparent}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc)}
 .main{position:relative;z-index:1;max-width:800px;margin:0 auto;padding:24px 16px 80px}
-.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px}
-.panel-title{font-family:var(--font-head);font-size:18px;color:var(--accent);margin-bottom:20px;letter-spacing:1px}
-.date-badge{background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);color:var(--accent3);padding:8px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;display:inline-block}
-.field{margin-bottom:20px}.field-label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:700}
-.select{width:100%;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:15px;outline:none}
-.select.small{width:auto;min-width:130px;font-size:13px;padding:8px 12px}
-.already-done{background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);color:var(--success);padding:14px 16px;border-radius:10px;font-size:14px;text-align:center}
-.tasks-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
-@media(max-width:400px){.tasks-grid{grid-template-columns:1fr}}
-.upload-box{background:var(--surface);border:2px dashed var(--border);border-radius:12px;min-height:140px;cursor:pointer;overflow:hidden;position:relative}
-.upload-box.uploaded{border-style:solid;border-color:var(--success)}
-.upload-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;height:100%;gap:6px}
-.upload-icon{font-size:32px}.upload-label{font-size:13px;font-weight:700;color:var(--text)}.upload-hint{font-size:11px;color:var(--muted)}
-.preview-wrap{position:relative;width:100%;height:140px}.preview-img{width:100%;height:100%;object-fit:cover;display:block}
-.preview-badge{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);padding:4px 8px;font-size:11px;color:var(--success);text-align:center}
-.remove-btn{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;border-radius:50%;color:#fff;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:22px;text-align:center}
-.task-hint{font-size:12px;color:var(--muted);margin-bottom:20px;padding:10px 12px;background:rgba(255,255,255,.03);border-radius:8px;border-left:3px solid var(--accent2)}
-.submit-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),#f0532a);border:none;border-radius:12px;color:#fff;font-family:var(--font-head);font-size:16px;font-weight:700;letter-spacing:1px;cursor:pointer}
-.submit-btn.loading{opacity:.7;cursor:not-allowed}
+.panel{background:var(--card);border:1px solid var(--bdr);border-radius:16px;padding:24px}
+.ptitle{font-family:var(--fh);font-size:18px;color:var(--acc);margin-bottom:20px}
+.dbadge{background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);color:var(--acc3);padding:8px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;display:inline-block}
+.flabel{display:block;font-size:13px;color:var(--mut);margin-bottom:8px;font-weight:700}
+.sel{width:100%;padding:12px 14px;background:var(--sur);border:1px solid var(--bdr);border-radius:10px;color:var(--txt);font-family:var(--fb);font-size:15px;outline:none}
+.sel.sm{width:auto;min-width:130px;font-size:13px;padding:8px 12px}
+.sel:focus{border-color:var(--acc2)}
+.done-msg{background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);color:var(--grn);padding:14px;border-radius:10px;font-size:14px;text-align:center}
+.grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:400px){.grid4{grid-template-columns:1fr}}
+.ubox{background:var(--sur);border:2px dashed var(--bdr);border-radius:12px;min-height:140px;cursor:pointer;overflow:hidden;position:relative}
+.ubox.ok{border-style:solid;border-color:var(--grn)}
+.uph{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;height:100%;gap:6px}
+.uph-ic{font-size:32px}.uph-lb{font-size:13px;font-weight:700}.uph-ht{font-size:11px;color:var(--mut)}
+.prev-wrap{position:relative;width:100%;height:140px}
+.prev-img{width:100%;height:100%;object-fit:cover;display:block}
+.prev-badge{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);padding:4px 8px;font-size:11px;color:var(--grn);text-align:center}
+.rm-btn{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;border-radius:50%;color:#fff;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:22px;text-align:center}
+.hint{font-size:12px;color:var(--mut);margin-bottom:20px;padding:10px 12px;background:rgba(255,255,255,.03);border-radius:8px;border-left:3px solid var(--acc2)}
+.sbtn{width:100%;padding:16px;background:linear-gradient(135deg,var(--acc),#f0532a);border:none;border-radius:12px;color:#fff;font-family:var(--fh);font-size:16px;font-weight:700;cursor:pointer}
+.sbtn:disabled{opacity:.7;cursor:not-allowed}
 .msg{margin-top:12px;padding:12px 16px;border-radius:10px;font-size:14px;text-align:center}
-.msg.success{background:rgba(46,204,113,.12);color:var(--success);border:1px solid rgba(46,204,113,.3)}
-.msg.error{background:rgba(231,76,60,.12);color:var(--danger);border:1px solid rgba(231,76,60,.3)}
-.progress-wrap{margin-bottom:10px}.progress-track{background:rgba(255,255,255,.06);border-radius:999px;height:10px;position:relative;overflow:hidden}
-.progress-fill{height:100%;border-radius:999px;transition:width 1s ease}.progress-pct{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:9px;color:#fff;font-weight:700}
-.section-title{font-size:14px;font-weight:700;color:var(--muted);margin-bottom:12px}
-.team-block{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
-.team-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.team-name{font-family:var(--font-head);font-size:15px;color:var(--accent2);letter-spacing:1px}
-.team-min-days{font-size:13px;color:var(--accent);font-weight:700;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);padding:3px 10px;border-radius:20px}
-.team-monster-hp{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px}
-.team-monster-emoji{font-size:24px}.team-hp-track{flex:1;height:10px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
-.team-hp-fill{height:100%;border-radius:6px;transition:width 1s ease}.team-hp-label{font-size:11px;color:var(--muted);white-space:nowrap;min-width:70px;text-align:right}
-.milestone-bar-wrap{position:relative;margin-bottom:36px}.milestone-track{position:relative;height:10px;background:rgba(255,255,255,.07);border-radius:999px;overflow:visible}
-.milestone-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#22d3ee,#a855f7);transition:width 1s ease}
-.milestone-marker{position:absolute;top:50%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;z-index:2}
-.milestone-marker.reached{box-shadow:0 0 10px currentColor;background:var(--card)}
-.ms-icon{line-height:1}.milestone-labels{position:relative;height:36px}
-.ms-label{position:absolute;transform:translateX(-50%);font-size:10px;color:var(--muted);text-align:center;top:6px;white-space:nowrap;line-height:1.3}
-.ms-label.reached{font-weight:700}
-.reward-banner-wrap{margin-bottom:12px}
-.team-reward-badge{display:block;text-align:center;padding:10px 16px;border-radius:10px;border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:700;background:rgba(255,255,255,.03)}
-.team-reward-badge.unlocked{animation:glow-pulse 2s ease-in-out infinite}
-@keyframes glow-pulse{0%,100%{box-shadow:0 0 8px currentColor}50%{box-shadow:0 0 20px currentColor}}
-.members-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
-.member-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
-.member-name{font-weight:700;font-size:15px;margin-bottom:2px}
-.member-days-row-card{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.member-days{font-size:13px;color:var(--accent3)}
-.personal-reward-tag{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--muted);background:rgba(255,255,255,.03);white-space:nowrap}
-.personal-reward-tag.earned{border-color:#7c3aed;color:#a855f7;background:rgba(124,58,237,.12);font-weight:700}
-.day-dots{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
-.day-dot{width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.08)}
-.day-dot.done{background:var(--success)}
-.admin-login{display:flex;flex-direction:column;gap:12px;max-width:320px}
-.admin-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
-.stat-num{font-family:var(--font-head);font-size:28px;color:var(--accent)}.stat-lbl{font-size:12px;color:var(--muted);margin-top:4px}
-.chart-section{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:24px}
-.rank-chart{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
-.rank-row{display:flex;align-items:center;gap:10px}.rank-medal{font-size:20px;width:28px;text-align:center;flex-shrink:0}
-.rank-team-name{font-size:13px;font-weight:700;width:90px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rank-bar-wrap{flex:1;position:relative;height:28px;background:rgba(255,255,255,.05);border-radius:6px;overflow:hidden}
-.rank-bar{height:100%;border-radius:6px;transition:width 1s ease;min-width:2px}
-.rank-bar-num{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
-.rank-table{border:1px solid var(--border);border-radius:10px;overflow:hidden;font-size:13px;margin-bottom:8px}
-.rank-table-head{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;background:rgba(255,255,255,.06);padding:8px 14px;color:var(--muted);font-size:11px;font-weight:700;gap:8px}
-.rank-table-row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;padding:10px 14px;border-top:1px solid var(--border);gap:8px;align-items:center}
-.rank-table-row.rank-first{background:rgba(245,166,35,.06)}.rank-num{font-family:var(--font-head);font-size:14px;color:var(--accent3)}
-.no-reward{color:var(--muted)}.reward-chip{font-size:16px;margin-right:2px}
-.member-days-group{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px}
-.member-days-team{padding:8px 14px;background:rgba(168,85,247,.08);font-size:12px;font-weight:700;color:var(--accent2);border-bottom:1px solid var(--border)}
-.member-days-row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid rgba(255,255,255,.04)}
-.member-days-rank{font-size:11px;color:var(--muted);width:22px;text-align:right;flex-shrink:0}
-.member-days-name{font-size:13px;width:60px;flex-shrink:0}
-.member-days-bar-wrap{flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:4px;position:relative;overflow:visible}
-.member-days-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,#22d3ee,#6366f1);transition:width .8s ease}
-.member-days-milestone{position:absolute;top:-3px;width:2px;height:14px;background:rgba(245,166,35,.5);border-radius:1px;transform:translateX(-50%)}
-.member-days-num{font-size:12px;font-weight:700;color:var(--accent3);width:36px;text-align:right;flex-shrink:0}
-.confirm-dialog{background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.4);border-radius:10px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--text)}
-.confirm-btns{display:flex;gap:8px}
-.confirm-yes{background:var(--danger);border:none;border-radius:7px;color:#fff;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}
-.confirm-no{background:rgba(255,255,255,.07);border:1px solid var(--border);border-radius:7px;color:var(--muted);padding:7px 16px;font-size:13px;cursor:pointer}
-.team-mgmt-section{margin-bottom:20px}
-.team-mgmt-toggle{width:100%;padding:12px 16px;text-align:left;background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.3);border-radius:10px;color:var(--accent2);font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer}
-.team-mgmt-body{margin-top:12px;display:flex;flex-direction:column;gap:12px}
-.team-mgmt-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
-.team-mgmt-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.team-mgmt-name{font-weight:700;font-size:14px;flex:1}
-.team-mgmt-count{font-size:11px;color:var(--muted);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:6px}
-.team-mgmt-del-team{background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.3);color:var(--danger);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer}
-.team-mgmt-members{display:flex;flex-wrap:wrap;gap:8px;min-height:28px}
-.team-mgmt-member-tag{display:flex;align-items:center;gap:6px;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.25);color:var(--accent3);padding:4px 10px;border-radius:20px;font-size:13px}
-.team-mgmt-member-tag button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0;line-height:1}
-.team-mgmt-add-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.team-mgmt-new-team{background:rgba(245,166,35,.05);border:1px dashed rgba(245,166,35,.3);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
-.admin-move-section{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:12px;padding:16px;margin-bottom:20px}
-.admin-move-grid{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
-.admin-move-grid>div{display:flex;flex-direction:column;gap:6px}.move-btn-wrap{justify-content:flex-end}
-.move-btn{padding:9px 20px;background:linear-gradient(135deg,var(--accent),#f0532a);border:none;border-radius:8px;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
-.admin-date-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:10px;flex-wrap:wrap}
-.moved-badge{font-size:10px;background:rgba(245,166,35,.15);color:var(--accent);padding:2px 6px;border-radius:4px}
-.delete-btn{margin-left:auto;background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.3);color:var(--danger);padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer}
-.admin-member{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
-.admin-member-title{padding:12px 16px;cursor:pointer;font-weight:700;list-style:none;display:flex;align-items:center;gap:8px}
-.admin-member-title::-webkit-details-marker{display:none}
-.admin-team-tag{font-size:11px;color:var(--muted);font-weight:400}
-.admin-count{margin-left:auto;font-size:12px;color:var(--accent3);background:rgba(34,211,238,.1);padding:2px 8px;border-radius:6px}
-.admin-day{padding:12px 16px;border-top:1px solid var(--border)}
-.admin-photos{display:flex;gap:12px;flex-wrap:wrap}
-.admin-photo-wrap{flex:1;min-width:100px}.admin-photo-label{font-size:11px;color:var(--muted);margin-bottom:4px}
-.admin-photo{width:100%;border-radius:6px;object-fit:cover;max-height:120px;display:block}
-.admin-no-photo{background:rgba(255,255,255,.04);border:1px dashed var(--border);border-radius:6px;padding:20px;text-align:center;font-size:11px;color:var(--muted)}
-.admin-panel{}
-.footer{position:relative;z-index:1;text-align:center;padding:20px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
+.msg.ok{background:rgba(46,204,113,.12);color:var(--grn);border:1px solid rgba(46,204,113,.3)}
+.msg.err{background:rgba(231,76,60,.12);color:var(--red);border:1px solid rgba(231,76,60,.3)}
+.pbar-wrap{margin-bottom:10px}
+.pbar-track{background:rgba(255,255,255,.06);border-radius:999px;height:10px;position:relative;overflow:hidden}
+.pbar-fill{height:100%;border-radius:999px;transition:width 1s}
+.pbar-pct{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:9px;color:#fff;font-weight:700}
+.slbl{font-size:14px;font-weight:700;color:var(--mut);margin-bottom:12px}
+.tblock{background:rgba(255,255,255,.02);border:1px solid var(--bdr);border-radius:14px;padding:20px;margin-bottom:20px}
+.thead{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.tname{font-family:var(--fh);font-size:15px;color:var(--acc2)}
+.tmin{font-size:13px;color:var(--acc);font-weight:700;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);padding:3px 10px;border-radius:20px}
+.thp{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.03);border:1px solid var(--bdr);border-radius:10px;padding:10px 14px;margin-bottom:16px}
+.thp-em{font-size:24px}
+.thp-track{flex:1;height:10px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
+.thp-fill{height:100%;border-radius:6px;transition:width 1s}
+.thp-lbl{font-size:11px;color:var(--mut);white-space:nowrap;min-width:70px;text-align:right}
+.ms-wrap{position:relative;margin-bottom:36px}
+.ms-track{position:relative;height:10px;background:rgba(255,255,255,.07);border-radius:999px;overflow:visible}
+.ms-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#22d3ee,#a855f7);transition:width 1s}
+.ms-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:var(--sur);border:2px solid var(--bdr);display:flex;align-items:center;justify-content:center;font-size:13px;z-index:2}
+.ms-dot.lit{box-shadow:0 0 10px currentColor;background:var(--card)}
+.ms-lbls{position:relative;height:36px}
+.ms-lbl{position:absolute;transform:translateX(-50%);font-size:10px;color:var(--mut);text-align:center;top:6px;white-space:nowrap;line-height:1.3}
+.ms-lbl.lit{font-weight:700}
+.rw-banner{display:block;text-align:center;padding:10px 16px;border-radius:10px;border:1px solid var(--bdr);color:var(--mut);font-size:13px;font-weight:700;background:rgba(255,255,255,.03);margin-bottom:12px}
+.rw-banner.lit{animation:glow 2s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 8px currentColor}50%{box-shadow:0 0 20px currentColor}}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.mcard{background:var(--sur);border:1px solid var(--bdr);border-radius:12px;padding:16px}
+.mname{font-weight:700;font-size:15px;margin-bottom:2px}
+.mrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.mdays{font-size:13px;color:var(--acc3)}
+.rtag{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--bdr);color:var(--mut);background:rgba(255,255,255,.03);white-space:nowrap}
+.rtag.lit{border-color:#7c3aed;color:#a855f7;background:rgba(124,58,237,.12);font-weight:700}
+.dots{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+.dot{width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.08)}
+.dot.on{background:var(--grn)}
+.alogin{display:flex;flex-direction:column;gap:12px;max-width:320px}
+.astats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.astat{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:16px;text-align:center}
+.astat-n{font-family:var(--fh);font-size:28px;color:var(--acc)}
+.astat-l{font-size:12px;color:var(--mut);margin-top:4px}
+.chart{background:rgba(255,255,255,.02);border:1px solid var(--bdr);border-radius:14px;padding:20px;margin-bottom:24px}
+.rank-rows{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.rank-row{display:flex;align-items:center;gap:10px}
+.rank-med{font-size:20px;width:28px;text-align:center;flex-shrink:0}
+.rank-tn{font-size:13px;font-weight:700;width:90px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rank-bw{flex:1;position:relative;height:28px;background:rgba(255,255,255,.05);border-radius:6px;overflow:hidden}
+.rank-b{height:100%;border-radius:6px;min-width:2px;transition:width 1s}
+.rank-bn{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.rtable{border:1px solid var(--bdr);border-radius:10px;overflow:hidden;font-size:13px;margin-bottom:8px}
+.rtable-h{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;background:rgba(255,255,255,.06);padding:8px 14px;color:var(--mut);font-size:11px;font-weight:700;gap:8px}
+.rtable-r{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;padding:10px 14px;border-top:1px solid var(--bdr);gap:8px;align-items:center}
+.rtable-r.f1{background:rgba(245,166,35,.06)}
+.rnum{font-family:var(--fh);font-size:14px;color:var(--acc3)}
+.mdg{background:rgba(255,255,255,.02);border:1px solid var(--bdr);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.mdg-t{padding:8px 14px;background:rgba(168,85,247,.08);font-size:12px;font-weight:700;color:var(--acc2);border-bottom:1px solid var(--bdr)}
+.mdg-r{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid rgba(255,255,255,.04)}
+.mdg-rk{font-size:11px;color:var(--mut);width:22px;text-align:right;flex-shrink:0}
+.mdg-nm{font-size:13px;width:60px;flex-shrink:0}
+.mdg-bw{flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:4px;position:relative;overflow:visible}
+.mdg-b{height:100%;border-radius:4px;background:linear-gradient(90deg,#22d3ee,#6366f1);transition:width .8s}
+.mdg-ml{position:absolute;top:-3px;width:2px;height:14px;background:rgba(245,166,35,.5);border-radius:1px;transform:translateX(-50%)}
+.mdg-n{font-size:12px;font-weight:700;color:var(--acc3);width:36px;text-align:right;flex-shrink:0}
+.cdlg{background:rgba(231,76,60,.1);border:1px solid rgba(231,76,60,.4);border-radius:10px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;margin-bottom:12px}
+.cdlg-btns{display:flex;gap:8px}
+.cyes{background:var(--red);border:none;border-radius:7px;color:#fff;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}
+.cno{background:rgba(255,255,255,.07);border:1px solid var(--bdr);border-radius:7px;color:var(--mut);padding:7px 16px;font-size:13px;cursor:pointer}
+.tmgmt{margin-bottom:20px}
+.tmgmt-tog{width:100%;padding:12px 16px;text-align:left;background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.3);border-radius:10px;color:var(--acc2);font-family:var(--fb);font-size:14px;font-weight:700;cursor:pointer}
+.tmgmt-body{margin-top:12px;display:flex;flex-direction:column;gap:12px}
+.tcard{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.tcard-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tcard-n{font-weight:700;font-size:14px;flex:1}
+.tcard-c{font-size:11px;color:var(--mut);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:6px}
+.tdel{background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.3);color:var(--red);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer}
+.tmbs{display:flex;flex-wrap:wrap;gap:8px;min-height:28px}
+.mtag{display:flex;align-items:center;gap:6px;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.25);color:var(--acc3);padding:4px 10px;border-radius:20px;font-size:13px}
+.mtag button{background:none;border:none;color:var(--mut);cursor:pointer;font-size:12px;padding:0;line-height:1}
+.add-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.new-team-box{background:rgba(245,166,35,.05);border:1px dashed rgba(245,166,35,.3);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.move-sec{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:12px;padding:16px;margin-bottom:20px}
+.move-grid{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
+.move-grid>div{display:flex;flex-direction:column;gap:6px}
+.mbtn{padding:9px 20px;background:linear-gradient(135deg,var(--acc),#f0532a);border:none;border-radius:8px;color:#fff;font-family:var(--fb);font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+.aday-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);margin-bottom:10px;flex-wrap:wrap}
+.moved-tag{font-size:10px;background:rgba(245,166,35,.15);color:var(--acc);padding:2px 6px;border-radius:4px}
+.dbtn{margin-left:auto;background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.3);color:var(--red);padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer}
+.amem{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.amem summary{padding:12px 16px;cursor:pointer;font-weight:700;list-style:none;display:flex;align-items:center;gap:8px}
+.amem summary::-webkit-details-marker{display:none}
+.atag{font-size:11px;color:var(--mut);font-weight:400}
+.acnt{margin-left:auto;font-size:12px;color:var(--acc3);background:rgba(34,211,238,.1);padding:2px 8px;border-radius:6px}
+.aday{padding:12px 16px;border-top:1px solid var(--bdr)}
+.aphotos{display:flex;gap:12px;flex-wrap:wrap}
+.apw{flex:1;min-width:100px}
+.aplbl{font-size:11px;color:var(--mut);margin-bottom:4px}
+.aph{width:100%;border-radius:6px;object-fit:cover;max-height:120px;display:block}
+.ano-ph{background:rgba(255,255,255,.04);border:1px dashed var(--bdr);border-radius:6px;padding:20px;text-align:center;font-size:11px;color:var(--mut)}
+footer{position:relative;z-index:1;text-align:center;padding:20px;font-size:12px;color:var(--mut);border-top:1px solid var(--bdr)}
 </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyCrgMfdn79JOKx4XKA4hNwNZkhNACoizT4",
+  authDomain:"restart-challenge-2026.firebaseapp.com",
+  databaseURL:"https://restart-challenge-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"restart-challenge-2026",
+  storageBucket:"restart-challenge-2026.firebasestorage.app",
+  messagingSenderId:"477447792834",
+  appId:"1:477447792834:web:c657ca4d3e612d1ccf335b"
+});
+var DB = firebase.database();
+var CL_CLOUD  = "dv2dmadr9";
+var CL_PRESET = "restart_challenge";
+var ADMIN_PW  = "jimmy0117";
+var TOTAL     = 28;
+var A_START   = "2026-06-01";
+var A_END     = "2026-06-28";
+
+// 台灣時間
+function twToday(){
+  var tw=new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Taipei"}));
+  return tw.getFullYear()+"-"+pad(tw.getMonth()+1)+"-"+pad(tw.getDate());
+}
+function pad(n){return String(n).padStart(2,"0");}
+function actDay(){
+  var tw=new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Taipei"}));
+  var d=Math.floor((tw-new Date("2026-06-01T00:00:00"))/86400000);
+  return(d>=0&&d<TOTAL)?d+1:null;
+}
+
+// 狀態
+var S={tab:"submit",teams:{},records:{},adminOk:false,adminPw:"",
+  p1:null,p2:null,p3:null,p4:null,
+  sel:"",smsg:"",busy:false,
+  et:{member:"",from:"",to:""},emsg:"",
+  ctm:null,ntn:"",nmi:{},tmOpen:false};
+
+// Firebase 監聽
+DB.ref("teams").on("value",function(s){S.teams=s.val()||{};R();});
+DB.ref("records").on("value",function(s){S.records=s.val()||{};R();});
+
+// 計算
+function mdays(m){
+  var r=S.records[m]||{};
+  return Object.keys(r).filter(function(d){return d>=A_START&&d<=A_END;}).length;
+}
+function tmin(t){
+  var mb=S.teams[t]||[];
+  if(!mb.length)return 0;
+  return Math.min.apply(null,mb.map(mdays));
+}
+function allMb(){
+  return Object.entries(S.teams).flatMap(function(e){
+    return(e[1]||[]).map(function(m){return{name:m,team:e[0]};});
+  });
+}
+function gPct(){
+  var a=allMb();if(!a.length)return 0;
+  return a.reduce(function(x,m){return x+mdays(m.name);},0)/(a.length*TOTAL)*100;
+}
+
+// Cloudinary
+async function upPhoto(file){
+  var fd=new FormData();
+  fd.append("file",file);fd.append("upload_preset",CL_PRESET);
+  var r=await fetch("https://api.cloudinary.com/v1_1/"+CL_CLOUD+"/image/upload",{method:"POST",body:fd});
+  var d=await r.json();
+  if(!d.secure_url)throw new Error(d.error&&d.error.message||"上傳失敗");
+  return d.secure_url;
+}
+
+// 提交
+async function doSubmit(){
+  var today=twToday();
+  if(!S.sel)return sm("⚠️ 請選擇姓名");
+  if(!S.p1||!S.p2||!S.p3||!S.p4)return sm("⚠️ 四張照片都要上傳！");
+  if(S.records[S.sel]&&S.records[S.sel][today])return sm("⚠️ 今天已提交過囉！");
+  S.busy=true;sm("上傳中，請稍候⋯");
+  try{
+    var urls=await Promise.all([upPhoto(S.p1),upPhoto(S.p2),upPhoto(S.p3),upPhoto(S.p4)]);
+    await DB.ref("records/"+S.sel+"/"+today).set({ts:new Date().toISOString(),photo1:urls[0],photo2:urls[1],photo3:urls[2],photo4:urls[3]});
+    S.p1=S.p2=S.p3=S.p4=null;sm("🎉 任務完成！打倒今日怪物！");
+  }catch(e){sm("❌ 上傳失敗："+e.message);}
+  S.busy=false;R();
+}
+function sm(m){S.smsg=m;R();}
+
+// 移動日期
+async function doMove(){
+  var m=S.et.member,f=S.et.from,t=S.et.to;
+  if(!m||!f||!t)return em("⚠️ 請填寫完整欄位");
+  if(f===t)return em("⚠️ 來源與目標日期相同");
+  var rec=(S.records[m]||{})[f];
+  if(!rec)return em("⚠️ 該成員在來源日期沒有紀錄");
+  if((S.records[m]||{})[t])return em("⚠️ 目標日期已有紀錄");
+  await DB.ref("records/"+m+"/"+t).set(Object.assign({},rec,{adminMoved:true,movedAt:new Date().toISOString()}));
+  await DB.ref("records/"+m+"/"+f).remove();
+  em("✅ 已將 "+m+" 的 "+f+" 移至 "+t);
+  S.et={member:"",from:"",to:""};
+}
+function em(m){S.emsg=m;R();}
+
+// 刪除紀錄
+async function delRec(m,d){
+  await DB.ref("records/"+m+"/"+d).remove();
+}
+
+// 隊伍管理
+async function saveTm(d){await DB.ref("teams").set(d);}
+async function addTeam(){
+  var n=S.ntn.trim();if(!n||S.teams[n])return;
+  var nx=Object.assign({},S.teams);nx[n]=[];
+  await saveTm(nx);S.ntn="";R();
+}
+async function addMember(team){
+  var n=(S.nmi[team]||"").trim();
+  if(!n||(S.teams[team]||[]).indexOf(n)>-1)return;
+  var nx=Object.assign({},S.teams);
+  nx[team]=(nx[team]||[]).concat(n);
+  await saveTm(nx);S.nmi[team]="";R();
+}
+async function delMember(team,m){
+  var nx=Object.assign({},S.teams);
+  nx[team]=nx[team].filter(function(x){return x!==m;});
+  await saveTm(nx);
+}
+async function delTeam(){
+  var t=S.ctm;if(!t)return;
+  var nx=Object.assign({},S.teams);delete nx[t];
+  await saveTm(nx);S.ctm=null;R();
+}
+function doLogin(){
+  if(S.adminPw===ADMIN_PW){S.adminOk=true;R();}
+  else alert("密碼錯誤");
+}
+
+// ══ RENDER ══
+function R(){
+  document.getElementById("app").innerHTML=html();
+  bind();
+}
+
+function e(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+
+function html(){
+  var today=twToday(), day=actDay();
+  var hp=Math.max(0,100-gPct());
+  var hc=hp>60?"#e74c3c":hp>30?"#e67e22":"#2ecc71";
+  var h='<div class="bg-grid"></div>';
+  h+='<header class="hero">';
+  h+='<div class="hero-badge">⚔️ 21天打怪挑戰</div>';
+  h+='<h1 class="hero-title">重啟行動力<br><span class="hero-sub">1 · 1 · 1 · 1</span></h1>';
+  h+='<p class="hero-desc">6/1 – 6/28｜3人同行 21天｜完成任務 免費🥩請你吃</p>';
+  h+='<div class="boss-hp"><div class="boss-em">👾</div>';
+  h+='<div class="hp-track"><div class="hp-fill" style="width:'+Math.round(hp)+'%;background:'+hc+'"></div></div>';
+  h+='<div class="hp-lbl">Boss HP '+Math.round(hp)+'%</div></div>';
+  h+='<div class="hero-day">'+(day?'🗡️ 活動第 '+day+' 天 / '+TOTAL+' 天':'活動期間：6/1 – 6/28')+'</div>';
+  h+='</header>';
+  h+='<nav class="tabs">';
+  [{k:"submit",l:"⚔️ 提交任務"},{k:"view",l:"📊 查看進度"},{k:"admin",l:"🔑 管理員"}].forEach(function(t){
+    h+='<button class="tab'+(S.tab===t.k?" on":"")+'" id="tab_'+t.k+'">'+t.l+'</button>';
+  });
+  h+='</nav><main class="main">';
+  if(S.tab==="submit")h+=htmlSubmit(today);
+  else if(S.tab==="view")h+=htmlView();
+  else h+=htmlAdmin();
+  h+='</main><footer>重啟行動力 1-1-1-1 ｜ 香綺大C ⚔️</footer>';
+  return h;
+}
+
+function htmlSubmit(today){
+  var already=S.records[S.sel]&&S.records[S.sel][today];
+  var opts='<option value="">── 請選擇 ──</option>';
+  Object.entries(S.teams).forEach(function(e){
+    opts+='<optgroup label="'+e[0]+'">';
+    (e[1]||[]).forEach(function(m){opts+='<option value="'+e(m)+'"'+(m===S.sel?' selected':'')+'>'+e(m)+'</option>';});
+    opts+='</optgroup>';
+  });
+  var h='<div class="panel"><div class="ptitle">⚔️ 今日任務上傳</div>';
+  h+='<div class="dbadge">📅 台灣時間今日：'+today+'</div>';
+  h+='<div style="margin-bottom:20px"><label class="flabel">👤 選擇你的名字</label>';
+  h+='<select class="sel" id="memSel">'+opts+'</select></div>';
+  if(S.sel&&already)h+='<div class="done-msg">✅ '+e(S.sel)+' 今天已完成任務！明天繼續打怪💪</div>';
+  if(S.sel&&!already){
+    h+='<div class="grid4">';
+    [{k:"p1",l:"新增群友",i:"👥"},{k:"p2",l:"暖群友",i:"🔥"},{k:"p3",l:"市調",i:"📋"},{k:"p4",l:"使用產品",i:"🌿"}].forEach(function(p){
+      var val=S[p.k];
+      if(val){
+        var src=val instanceof File?URL.createObjectURL(val):val;
+        h+='<div class="ubox ok"><div class="prev-wrap">';
+        h+='<img src="'+src+'" class="prev-img">';
+        h+='<div class="prev-badge">✅ '+p.l+'</div>';
+        h+='<button class="rm-btn" id="rm_'+p.k+'">✕</button>';
+        h+='</div></div>';
+      }else{
+        h+='<div class="ubox" id="ub_'+p.k+'">';
+        h+='<div class="uph"><span class="uph-ic">'+p.i+'</span><span class="uph-lb">'+p.l+'</span><span class="uph-ht">點擊上傳照片</span></div>';
+        h+='<input type="file" id="fi_'+p.k+'" accept="image/*" style="display:none">';
+        h+='</div>';
+      }
+    });
+    h+='</div>';
+    h+='<div class="hint">💡 市調：居家購物清單 · 強連結 · 商展 · 評估　｜　🌿 使用產品：放群組照片或影片＋寫下感受</div>';
+    h+='<button class="sbtn" id="submitBtn"'+(S.busy?' disabled':'')+'>'+( S.busy?'上傳中...':'⚔️ 完成今日任務！打怪！')+'</button>';
+    if(S.smsg)h+='<div class="msg '+(S.smsg.startsWith('🎉')?'ok':'err')+'">'+e(S.smsg)+'</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+function htmlView(){
+  var teams=S.teams;
+  if(!Object.keys(teams).length)
+    return '<div class="panel"><div class="ptitle">📊 戰況總覽</div><div style="color:var(--mut);text-align:center;padding:40px">尚未設定隊伍，請管理員新增</div></div>';
+  var h='<div class="panel"><div class="ptitle">📊 戰況總覽</div>';
+  Object.entries(teams).forEach(function(en){
+    var team=en[0],mbs=en[1]||[];
+    var mn=tmin(team),mp=Math.min((mn/21)*100,100);
+    var bhp=Math.max(0,100-(mn/21)*100);
+    var bc=mn>=21?"#2ecc71":mn>=14?"#e67e22":"#e74c3c";
+    var unlock=mn>=21;
+    h+='<div class="tblock">';
+    h+='<div class="thead"><span class="tname">'+e(team)+'</span><span class="tmin">全隊最低 '+mn+' 天</span></div>';
+    h+='<div class="thp"><span class="thp-em">👾</span>';
+    h+='<div class="thp-track"><div class="thp-fill" style="width:'+Math.round(bhp)+'%;background:'+bc+'"></div></div>';
+    h+='<span class="thp-lbl">Boss HP '+Math.round(bhp)+'%</span></div>';
+    h+='<div class="ms-wrap"><div class="ms-track">';
+    h+='<div class="ms-fill" style="width:'+mp+'%"></div>';
+    h+='<div class="ms-dot'+(mn>=21?' lit':'')+'" style="left:100%;border-color:#b91c1c"><span>🥩</span></div>';
+    h+='</div><div class="ms-lbls">';
+    h+='<div class="ms-lbl'+(mn>=21?' lit':'')+'" style="left:100%;color:#b91c1c">21天<br>🥩免費吃我家牛排！</div>';
+    h+='</div></div>';
+    h+='<div class="rw-banner'+(unlock?' lit':'')+'"'+(unlock?' style="border-color:#b91c1c;color:#b91c1c;background:#b91c1c18"':'')+'">';
+    h+=unlock?'✅ 全隊達標！🥩 免費吃我家牛排！':'🔒 全隊都完成21天 → 🥩 免費吃我家牛排！（還差'+(21-mn)+'天）';
+    h+='</div>';
+    h+='<div class="mgrid">';
+    mbs.forEach(function(m){
+      var d=mdays(m),pct=(d/TOTAL)*100,earn=d>=21;
+      var dots='';
+      for(var i=0;i<TOTAL;i++){
+        var dt=new Date("2026-06-01");dt.setDate(dt.getDate()+i);
+        var k=dt.toISOString().split("T")[0];
+        dots+='<div class="dot'+(S.records[m]&&S.records[m][k]?' on':'')+'" title="第'+(i+1)+'天 '+k+'"></div>';
+      }
+      h+='<div class="mcard">';
+      h+='<div class="mname">'+e(m)+'</div>';
+      h+='<div class="mrow"><span class="mdays">'+d+' / '+TOTAL+' 天</span>';
+      h+='<span class="rtag'+(earn?' lit':'')+'">'+(earn?'✅ 💰 報名費已達標':'🔒 還差'+(21-d)+'天拿回100元')+'</span></div>';
+      h+='<div class="pbar-wrap"><div class="pbar-track"><div class="pbar-fill" style="width:'+pct+'%;background:#22d3ee"></div><span class="pbar-pct">'+Math.round(pct)+'%</span></div></div>';
+      h+='<div class="dots">'+dots+'</div>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+function htmlAdmin(){
+  if(!S.adminOk){
+    var h='<div class="panel"><div class="ptitle">🔑 管理員審核</div>';
+    h+='<div class="alogin">';
+    h+='<input type="password" class="sel" id="pwIn" placeholder="輸入管理員密碼">';
+    h+='<button class="sbtn" id="loginBtn">解鎖</button>';
+    h+='</div></div>';
+    return h;
+  }
+  var all=allMb();
+  var tci=all.reduce(function(x,m){return x+mdays(m.name);},0);
+  // 排名
+  var td=Object.entries(S.teams).map(function(en){
+    var t=en[0],mb=en[1]||[];
+    var tot=mb.reduce(function(x,m){return x+mdays(m);},0);
+    var mn=mb.length?Math.min.apply(null,mb.map(mdays)):0;
+    return{team:t,members:mb,tot:tot,min:mn,avg:mb.length?tot/mb.length:0};
+  }).sort(function(a,b){return b.tot-a.tot;});
+  var mx=Math.max.apply(null,td.map(function(x){return x.tot;})||[1]);
+  var med=["🥇","🥈","🥉"];
+  var h='<div class="panel"><div class="ptitle">🔑 管理員審核</div><div>';
+  // 統計
+  h+='<div class="astats">';
+  h+='<div class="astat"><div class="astat-n">'+all.length+'</div><div class="astat-l">總成員</div></div>';
+  h+='<div class="astat"><div class="astat-n">'+tci+'</div><div class="astat-l">總打卡次數</div></div>';
+  h+='<div class="astat"><div class="astat-n">'+Math.round(gPct())+'%</div><div class="astat-l">全體完成率</div></div>';
+  h+='</div>';
+  // 排名圖表
+  h+='<div class="chart"><div class="slbl">🏆 隊伍排名（總打卡天數）</div>';
+  h+='<div class="rank-rows">';
+  td.forEach(function(x,i){
+    var bg=i===0?"linear-gradient(90deg,#f5a623,#f0532a)":i===1?"linear-gradient(90deg,#a855f7,#6366f1)":"linear-gradient(90deg,#22d3ee,#06b6d4)";
+    h+='<div class="rank-row"><div class="rank-med">'+(med[i]||"#"+(i+1))+'</div>';
+    h+='<div class="rank-tn">'+e(x.team)+'</div>';
+    h+='<div class="rank-bw"><div class="rank-b" style="width:'+(mx?Math.round(x.tot/mx*100):0)+'%;background:'+bg+'"></div>';
+    h+='<span class="rank-bn">'+x.tot+' 天</span></div></div>';
+  });
+  h+='</div>';
+  h+='<div class="rtable"><div class="rtable-h"><span>隊伍</span><span>總天數</span><span>平均</span><span>最低</span><span>獎勵</span></div>';
+  td.forEach(function(x,i){
+    var ul=x.min>=21?'<span style="font-size:16px">💰🥩</span>':'<span style="color:var(--mut)">—</span>';
+    h+='<div class="rtable-r'+(i===0?' f1':'')+'"><span>'+(med[i]||"#"+(i+1))+' '+e(x.team)+'</span>';
+    h+='<span class="rnum">'+x.tot+'</span><span class="rnum">'+x.avg.toFixed(1)+'</span>';
+    h+='<span class="rnum">'+x.min+'</span><span>'+ul+'</span></div>';
+  });
+  h+='</div>';
+  h+='<div class="slbl" style="margin-top:16px">👤 各成員完成天數</div>';
+  td.forEach(function(x){
+    var sorted=[].concat(x.members).map(function(m){return{name:m,d:mdays(m)};}).sort(function(a,b){return b.d-a.d;});
+    h+='<div class="mdg"><div class="mdg-t">'+e(x.team)+'</div>';
+    sorted.forEach(function(m,i){
+      h+='<div class="mdg-r"><span class="mdg-rk">#'+(i+1)+'</span><span class="mdg-nm">'+e(m.name)+'</span>';
+      h+='<div class="mdg-bw"><div class="mdg-b" style="width:'+(m.d/TOTAL*100)+'%"></div>';
+      h+='<div class="mdg-ml" style="left:'+(21/TOTAL*100)+'%"></div></div>';
+      h+='<span class="mdg-n">'+m.d+' 天</span></div>';
+    });
+    h+='</div>';
+  });
+  h+='</div>';
+  // 隊伍管理
+  h+='<div class="tmgmt">';
+  h+='<button class="tmgmt-tog" id="tmTogBtn">👥 隊伍與成員管理 '+(S.tmOpen?'▲':'▼')+'</button>';
+  if(S.tmOpen){
+    h+='<div class="tmgmt-body">';
+    if(S.ctm){
+      h+='<div class="cdlg"><span>確定刪除「'+e(S.ctm)+'」整隊？</span>';
+      h+='<div class="cdlg-btns"><button class="cyes" id="delTeamYes">確定刪除</button>';
+      h+='<button class="cno" id="delTeamNo">取消</button></div></div>';
+    }
+    Object.entries(S.teams).forEach(function(en){
+      var team=en[0],mbs=en[1]||[];
+      h+='<div class="tcard"><div class="tcard-h">';
+      h+='<span class="tcard-n">'+e(team)+'</span>';
+      h+='<span class="tcard-c">'+mbs.length+' 人</span>';
+      h+='<button class="tdel" data-delteam="'+e(team)+'">🗑️ 刪除整隊</button>';
+      h+='</div><div class="tmbs">';
+      if(mbs.length){
+        mbs.forEach(function(m){
+          h+='<div class="mtag">'+e(m)+'<button data-delmb-team="'+e(team)+'" data-delmb-m="'+e(m)+'">✕</button></div>';
+        });
+      }else{
+        h+='<span style="color:var(--mut);font-size:12px">尚無成員</span>';
+      }
+      h+='</div><div class="add-row">';
+      h+='<input class="sel sm" id="nmi_'+e(team)+'" placeholder="輸入成員姓名" value="'+(S.nmi[team]||"")+'">';
+      h+='<button class="mbtn" data-addmb="'+e(team)+'">＋ 新增</button>';
+      h+='</div></div>';
+    });
+    h+='<div class="new-team-box"><div class="flabel">新增隊伍</div>';
+    h+='<div class="add-row">';
+    h+='<input class="sel sm" id="ntnIn" placeholder="隊伍名稱（例如：🐉 龍隊）" value="'+e(S.ntn)+'">';
+    h+='<button class="mbtn" id="addTeamBtn">＋ 建立隊伍</button>';
+    h+='</div></div>';
+    h+='</div>';
+  }
+  h+='</div>';
+  // 移動日期
+  var mopts='<option value="">請選擇</option>';
+  Object.entries(S.teams).forEach(function(en){
+    mopts+='<optgroup label="'+e(en[0])+'">';
+    (en[1]||[]).forEach(function(m){mopts+='<option value="'+e(m)+'"'+(m===S.et.member?' selected':'')+'>'+e(m)+'</option>';});
+    mopts+='</optgroup>';
+  });
+  h+='<div class="move-sec"><div class="slbl">🗓️ 移動紀錄日期</div>';
+  h+='<div class="move-grid">';
+  h+='<div><div class="flabel">成員</div><select class="sel sm" id="etM">'+mopts+'</select></div>';
+  h+='<div><div class="flabel">來源日期</div><input type="date" class="sel sm" id="etF" value="'+S.et.from+'"></div>';
+  h+='<div><div class="flabel">移至日期</div><input type="date" class="sel sm" id="etT" value="'+S.et.to+'"></div>';
+  h+='<div style="justify-content:flex-end"><button class="mbtn" id="moveBtn">移動</button></div>';
+  h+='</div>';
+  if(S.emsg)h+='<div class="msg '+(S.emsg.startsWith('✅')?'ok':'err')+'" style="margin-top:8px">'+e(S.emsg)+'</div>';
+  h+='</div>';
+  // 逐人審核
+  h+='<div class="slbl">📷 逐人審核</div>';
+  var hasAny=false;
+  all.forEach(function(mb){
+    var rec=S.records[mb.name]||{};
+    var dates=Object.keys(rec).sort();
+    if(!dates.length)return;
+    hasAny=true;
+    h+='<details class="amem">';
+    h+='<summary>'+e(mb.name)+' <span class="atag">'+e(mb.team)+'</span><span class="acnt">'+dates.length+' 天</span></summary>';
+    dates.forEach(function(date){
+      var r=rec[date];
+      h+='<div class="aday"><div class="aday-row"><span>📅 '+date+'</span>';
+      if(r.adminMoved)h+='<span class="moved-tag">已移動</span>';
+      h+='<button class="dbtn" data-delrec-m="'+e(mb.name)+'" data-delrec-d="'+date+'">🗑️ 刪除</button></div>';
+      h+='<div class="aphotos">';
+      [{k:"photo1",l:"👥 新增群友"},{k:"photo2",l:"🔥 暖群友"},{k:"photo3",l:"📋 市調"},{k:"photo4",l:"🌿 使用產品"}].forEach(function(p){
+        h+='<div class="apw"><div class="aplbl">'+p.l+'</div>';
+        if(r[p.k])h+='<a href="'+r[p.k]+'" target="_blank"><img src="'+r[p.k]+'" class="aph"></a>';
+        else h+='<div class="ano-ph">未上傳</div>';
+        h+='</div>';
+      });
+      h+='</div></div>';
+    });
+    h+='</details>';
+  });
+  if(!hasAny)h+='<div style="color:var(--mut);font-size:13px;padding:20px 0">目前無人打卡</div>';
+  h+='</div></div>';
+  return h;
+}
+
+// ══ 事件綁定 ══
+function bind(){
+  // 分頁
+  ["submit","view","admin"].forEach(function(k){
+    var el=document.getElementById("tab_"+k);
+    if(el)el.addEventListener("click",function(){S.tab=k;R();});
+  });
+  // 成員選單
+  var ms=document.getElementById("memSel");
+  if(ms)ms.addEventListener("change",function(){S.sel=this.value;S.smsg="";R();});
+  // 照片上傳
+  ["p1","p2","p3","p4"].forEach(function(k){
+    var ub=document.getElementById("ub_"+k);
+    var fi=document.getElementById("fi_"+k);
+    var rm=document.getElementById("rm_"+k);
+    if(ub&&fi){
+      ub.addEventListener("click",function(){fi.click();});
+      fi.addEventListener("change",function(){
+        if(this.files[0]){S[k]=this.files[0];R();}
+      });
+    }
+    if(rm)rm.addEventListener("click",function(){S[k]=null;R();});
+  });
+  // 提交
+  var sb=document.getElementById("submitBtn");
+  if(sb)sb.addEventListener("click",doSubmit);
+  // 管理員登入
+  var pw=document.getElementById("pwIn");
+  var lb=document.getElementById("loginBtn");
+  if(pw)pw.addEventListener("input",function(){S.adminPw=this.value;});
+  if(pw)pw.addEventListener("keydown",function(e){if(e.key==="Enter")doLogin();});
+  if(lb)lb.addEventListener("click",doLogin);
+  // 隊伍管理 toggle
+  var tt=document.getElementById("tmTogBtn");
+  if(tt)tt.addEventListener("click",function(){S.tmOpen=!S.tmOpen;R();});
+  // 新增隊伍
+  var ntn=document.getElementById("ntnIn");
+  var atb=document.getElementById("addTeamBtn");
+  if(ntn)ntn.addEventListener("input",function(){S.ntn=this.value;});
+  if(ntn)ntn.addEventListener("keydown",function(ev){if(ev.key==="Enter")addTeam();});
+  if(atb)atb.addEventListener("click",addTeam);
+  // 新增成員（所有 nmi_ 前綴）
+  Object.keys(S.teams).forEach(function(team){
+    var inp=document.getElementById("nmi_"+team);
+    if(inp){
+      inp.addEventListener("input",function(){S.nmi[team]=this.value;});
+      inp.addEventListener("keydown",function(ev){if(ev.key==="Enter")addMember(team);});
+    }
+  });
+  // 新增成員按鈕
+  document.querySelectorAll("[data-addmb]").forEach(function(btn){
+    btn.addEventListener("click",function(){addMember(this.dataset.addmb);});
+  });
+  // 刪除成員
+  document.querySelectorAll("[data-delmb-team]").forEach(function(btn){
+    btn.addEventListener("click",function(){delMember(this.dataset.delmbTeam,this.dataset.delmbM);});
+  });
+  // 刪除整隊
+  document.querySelectorAll("[data-delteam]").forEach(function(btn){
+    btn.addEventListener("click",function(){S.ctm=this.dataset.delteam;R();});
+  });
+  var dy=document.getElementById("delTeamYes");
+  var dn=document.getElementById("delTeamNo");
+  if(dy)dy.addEventListener("click",delTeam);
+  if(dn)dn.addEventListener("click",function(){S.ctm=null;R();});
+  // 移動日期
+  var etm=document.getElementById("etM");
+  var etf=document.getElementById("etF");
+  var ett=document.getElementById("etT");
+  var mvb=document.getElementById("moveBtn");
+  if(etm)etm.addEventListener("change",function(){S.et.member=this.value;});
+  if(etf)etf.addEventListener("change",function(){S.et.from=this.value;});
+  if(ett)ett.addEventListener("change",function(){S.et.to=this.value;});
+  if(mvb)mvb.addEventListener("click",doMove);
+  // 刪除打卡紀錄
+  document.querySelectorAll("[data-delrec-m]").forEach(function(btn){
+    btn.addEventListener("click",function(){delRec(this.dataset.delrecM,this.dataset.delrecD);});
+  });
+}
+
+// 初始 render（等 Firebase 監聽回來才會真正顯示資料）
+document.getElementById("app").innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px"><div style="font-size:64px">👾</div><div style="font-size:20px;color:#6b6b8a;font-family:sans-serif">載入戰場中...</div></div>';
+</script>
 </body>
 </html>
