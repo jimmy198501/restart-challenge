@@ -265,16 +265,19 @@ async function delRec(m,d){
 // 隊伍管理
 async function saveTm(d){await DB.ref("teams").set(d);}
 async function addTeam(){
-  var n=S.ntn.trim();if(!n||S.teams[n])return;
+  var el=document.getElementById("ntnIn");
+  var n=(el?el.value:S.ntn||"").trim();
+  if(!n||S.teams[n])return;
   var nx=Object.assign({},S.teams);nx[n]=[];
-  await saveTm(nx);S.ntn="";R();
+  await saveTm(nx);S.ntn="";if(el)el.value="";R();
 }
 async function addMember(team){
-  var n=(S.nmi[team]||"").trim();
+  var el=document.getElementById("nmi_"+team);
+  var n=(el?el.value:(S.nmi[team]||"")).trim();
   if(!n||(S.teams[team]||[]).indexOf(n)>-1)return;
   var nx=Object.assign({},S.teams);
   nx[team]=(nx[team]||[]).concat(n);
-  await saveTm(nx);S.nmi[team]="";R();
+  await saveTm(nx);S.nmi[team]="";if(el)el.value="";R();
 }
 async function delMember(team,m){
   var nx=Object.assign({},S.teams);
@@ -287,7 +290,9 @@ async function delTeam(){
   await saveTm(nx);S.ctm=null;R();
 }
 function doLogin(){
-  if(S.adminPw===ADMIN_PW){S.adminOk=true;R();}
+  var el=document.getElementById("pwIn");
+  var pw=el?el.value:S.adminPw;
+  if(pw===ADMIN_PW){S.adminOk=true;R();}
   else alert("密碼錯誤");
 }
 
@@ -585,7 +590,6 @@ function bind(){
   // 管理員登入
   var pw=document.getElementById("pwIn");
   var lb=document.getElementById("loginBtn");
-  if(pw)pw.addEventListener("input",function(){S.adminPw=this.value;});
   if(pw)pw.addEventListener("keydown",function(e){if(e.key==="Enter")doLogin();});
   if(lb)lb.addEventListener("click",doLogin);
   // 隊伍管理 toggle
