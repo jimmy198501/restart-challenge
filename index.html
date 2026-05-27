@@ -368,7 +368,7 @@ function buildAdmin() {
     +'<div class="panel-title">🔑 管理員審核</div>'
     +'<div class="admin-login">'
     +'<input type="password" class="select" placeholder="輸入管理員密碼" '
-    +'oninput="S.adminPw=this.value" onkeydown="if(event.key===\'Enter\')doAdminLogin()">'
+    +'id="adminPwInput"'>'
     +'<button class="submit-btn" onclick="doAdminLogin()">解鎖</button>'
     +'</div></div>';
 
@@ -434,8 +434,7 @@ function buildAdmin() {
       +'<div class="team-mgmt-add-row">'
       +'<input class="select small" placeholder="輸入成員姓名" '
       +'value="'+(S.newMemberInputs[team]||"")+'" '
-      +'oninput="S.newMemberInputs[\''+esc(team)+'\']=this.value" '
-      +'onkeydown="if(event.key===\'Enter\')addMember(\''+esc(team)+'\')">'
+      +'data-member-input="\'+esc(team)+\'"\n'
       +'<button class="move-btn" onclick="addMember(\''+esc(team)+'\')">＋ 新增</button>'
       +'</div></div>';
   }).join("");
@@ -498,7 +497,7 @@ function buildAdmin() {
       +'<div class="team-mgmt-new-team"><div class="field-label">新增隊伍</div>'
       +'<div class="team-mgmt-add-row">'
       +'<input class="select small" placeholder="隊伍名稱（例如：🐉 龍隊）" value="'+esc(S.newTeamName)+'" '
-      +'oninput="S.newTeamName=this.value" onkeydown="if(event.key===\'Enter\')addTeam()">'
+      +'id="newTeamInput"'>'
       +'<button class="move-btn" onclick="addTeam()">＋ 建立隊伍</button>'
       +'</div></div></div>':'')
     +'</div>'
@@ -506,12 +505,12 @@ function buildAdmin() {
     +'<div class="admin-move-section"><div class="section-title">🗓️ 移動紀錄日期</div>'
     +'<div class="admin-move-grid">'
     +'<div><div class="field-label">成員</div>'
-    +'<select class="select small" onchange="S.editTarget.member=this.value">'
+    +'<select class="select small" id="etMember">'
     +'<option value="">請選擇</option>'+memberOpts+'</select></div>'
     +'<div><div class="field-label">來源日期</div>'
-    +'<input type="date" class="select small" value="'+S.editTarget.fromDate+'" onchange="S.editTarget.fromDate=this.value"></div>'
+    +'<input type="date" class="select small" value="'+S.editTarget.fromDate+'" id="etFrom"></div>'
     +'<div><div class="field-label">移至日期</div>'
-    +'<input type="date" class="select small" value="'+S.editTarget.toDate+'" onchange="S.editTarget.toDate=this.value"></div>'
+    +'<input type="date" class="select small" value="'+S.editTarget.toDate+'" id="etTo"></div>'
     +'<div class="move-btn-wrap"><button class="move-btn" onclick="handleMoveDate()">移動</button></div>'
     +'</div>'
     +(S.editMsg?'<div class="msg '+(S.editMsg.startsWith('✅')?'success':'error')+'" style="margin-top:8px">'+esc(S.editMsg)+'</div>':'')
@@ -526,6 +525,46 @@ function doAdminLogin() {
   if (S.adminPw === ADMIN_PW) { S.adminUnlocked=true; render(); }
   else { alert("密碼錯誤"); }
 }
+
+// 每次 render 後重新綁定所有輸入事件
+function bindEvents() {
+  // 管理員密碼
+  var pwInput = document.getElementById("adminPwInput");
+  if (pwInput) {
+    pwInput.value = S.adminPw;
+    pwInput.addEventListener("input", function(){ S.adminPw = this.value; });
+    pwInput.addEventListener("keydown", function(e){ if(e.key==="Enter") doAdminLogin(); });
+  }
+  // 新增隊伍輸入
+  var ntInput = document.getElementById("newTeamInput");
+  if (ntInput) {
+    ntInput.value = S.newTeamName;
+    ntInput.addEventListener("input", function(){ S.newTeamName = this.value; });
+    ntInput.addEventListener("keydown", function(e){ if(e.key==="Enter") addTeam(); });
+  }
+  // 成員選單
+  var selEl = document.getElementById("memberSelect");
+  if (selEl) {
+    selEl.addEventListener("change", function(){ S.selMember=this.value; S.submitMsg=""; render(); });
+  }
+  // 新增成員輸入（多個隊）
+  document.querySelectorAll("[data-member-input]").forEach(function(el){
+    var team = el.dataset.memberInput;
+    el.value = S.newMemberInputs[team] || "";
+    el.addEventListener("input", function(){ S.newMemberInputs[team] = this.value; });
+    el.addEventListener("keydown", function(e){ if(e.key==="Enter") addMember(team); });
+  });
+  // 移動日期欄位
+  var etMember = document.getElementById("etMember");
+  if (etMember) etMember.addEventListener("change", function(){ S.editTarget.member=this.value; });
+  var etFrom = document.getElementById("etFrom");
+  if (etFrom) etFrom.addEventListener("change", function(){ S.editTarget.fromDate=this.value; });
+  var etTo = document.getElementById("etTo");
+  if (etTo) etTo.addEventListener("change", function(){ S.editTarget.toDate=this.value; });
+}
+
+var _origRender = render;
+render = function() { _origRender(); bindEvents(); };
 
 // 初始 render
 render();
