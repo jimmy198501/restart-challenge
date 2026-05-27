@@ -368,7 +368,7 @@ function buildAdmin() {
     +'<div class="panel-title">🔑 管理員審核</div>'
     +'<div class="admin-login">'
     +'<input type="password" class="select" placeholder="輸入管理員密碼" '
-    +'id="adminPwInput"'>'
+    +'id="adminPwInput">'
     +'<button class="submit-btn" onclick="doAdminLogin()">解鎖</button>'
     +'</div></div>';
 
@@ -434,7 +434,7 @@ function buildAdmin() {
       +'<div class="team-mgmt-add-row">'
       +'<input class="select small" placeholder="輸入成員姓名" '
       +'value="'+(S.newMemberInputs[team]||"")+'" '
-      +'data-member-input="\'+esc(team)+\'"\n'
+      +'data-member-input="'+esc(team)+'">'
       +'<button class="move-btn" onclick="addMember(\''+esc(team)+'\')">＋ 新增</button>'
       +'</div></div>';
   }).join("");
