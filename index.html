@@ -192,8 +192,24 @@ var S={tab:"submit",teams:{},records:{},adminOk:false,adminPw:"",
   et:{member:"",from:"",to:""},emsg:"",
   ctm:null,ntn:"",nmi:{},tmOpen:false};
 
+// 預設隊伍（若 Firebase 沒有資料則寫入）
+var DEFAULT_TEAMS = {
+  "金華隊": ["金華","俊達","明樺"],
+  "香綺隊": ["香綺","香君","淑玲"],
+  "小原隊": ["小原","儀均","智齡"]
+};
+
 // Firebase 監聽
-DB.ref("teams").on("value",function(s){S.teams=s.val()||{};R();});
+DB.ref("teams").on("value",function(s){
+  var val = s.val();
+  if(!val || Object.keys(val).length === 0){
+    // 第一次：寫入預設隊伍
+    DB.ref("teams").set(DEFAULT_TEAMS);
+  } else {
+    S.teams = val;
+    R();
+  }
+});
 DB.ref("records").on("value",function(s){S.records=s.val()||{};R();});
 
 // 計算
