@@ -1,21 +1,28 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>重啟行動力 1-1-1-1</title>
 
-<!-- Firebase SDK -->
-<script type="module">
-// dynamic import 確保模組載入後才執行，同時讓 window 指派正常運作
-const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-const { getDatabase, ref, set, get, onValue, remove } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
-// Cloudinary 處理照片，不需要 Firebase Storage
+<!-- Firebase compat（傳統模式，不需要 import，全域直接用）-->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+</head>
+<body>
+<div id="app">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;background:#0a0a14">
+    <div style="font-size:64px;animation:bounce .6s infinite alternate">👾</div>
+    <div style="font-size:20px;color:#6b6b8a;font-family:sans-serif">載入戰場中...</div>
+  </div>
+</div>
+<style>@keyframes bounce{to{transform:translateY(-12px)}}</style>
 
-// ════════════════════════════════════════════
-//  ★★★ 請把下面換成你的 Firebase 設定 ★★★
-// ════════════════════════════════════════════
-const firebaseConfig = {
+<script>
+// ══════════════════════════════
+//  Firebase 設定
+// ══════════════════════════════
+firebase.initializeApp({
   apiKey:            "AIzaSyCrgMfdn79JOKx4XKA4hNwNZkhNACoizT4",
   authDomain:        "restart-challenge-2026.firebaseapp.com",
   databaseURL:       "https://restart-challenge-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -23,665 +30,511 @@ const firebaseConfig = {
   storageBucket:     "restart-challenge-2026.firebasestorage.app",
   messagingSenderId: "477447792834",
   appId:             "1:477447792834:web:c657ca4d3e612d1ccf335b"
-};
-// ════════════════════════════════════════════
+});
+const db = firebase.database();
 
-const app     = initializeApp(firebaseConfig);
-const db      = getDatabase(app);
-// ── Cloudinary 設定 ──
-const CLOUDINARY_CLOUD = "dv2dmadr9";
+// ══════════════════════════════
+//  Cloudinary 設定
+// ══════════════════════════════
+const CLOUDINARY_CLOUD  = "dv2dmadr9";
 const CLOUDINARY_PRESET = "restart_challenge";
 
-// ── 常數 ──
-const ADMIN_PW       = "jimmy0117";
-const TOTAL_DAYS     = 28;
-const ACT_START_STR  = "2026-06-01";
-const ACT_END_STR    = "2026-06-28";
-const PERSONAL_REWARD = { days: 21, icon: "💰", label: "拿回報名費100元", color: "#7c3aed" };
-const TEAM_REWARD     = { days: 21, icon: "🥩", label: "免費吃我家牛排！", color: "#b91c1c" };
+// ══════════════════════════════
+//  常數
+// ══════════════════════════════
+const ADMIN_PW        = "jimmy0117";
+const TOTAL_DAYS      = 28;
+const ACT_START       = "2026-06-01";
+const ACT_END         = "2026-06-28";
+const PERSONAL_REWARD = { days:21, icon:"💰", label:"拿回報名費100元", color:"#7c3aed" };
+const TEAM_REWARD     = { days:21, icon:"🥩", label:"免費吃我家牛排！", color:"#b91c1c" };
 
-// ── 台灣時間 ──
+// ══════════════════════════════
+//  台灣時間
+// ══════════════════════════════
 function getTWToday() {
-  const tw = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const tw = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Taipei"}));
   return `${tw.getFullYear()}-${String(tw.getMonth()+1).padStart(2,"0")}-${String(tw.getDate()).padStart(2,"0")}`;
 }
 function getActivityDay() {
-  const tw   = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const tw    = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Taipei"}));
   const start = new Date("2026-06-01T00:00:00");
   const diff  = Math.floor((tw - start) / 86400000);
   return (diff >= 0 && diff < TOTAL_DAYS) ? diff + 1 : null;
 }
 
-// ── 全域狀態 ──
-let state = {
-  tab: "submit",
-  teams: {},
-  records: {},
-  adminUnlocked: false,
-  photos: { photo1: null, photo2: null, photo3: null, photo4: null },
-  selMember: "",
-  submitMsg: "",
-  submitting: false,
-  editTarget: { member: "", fromDate: "", toDate: "" },
-  editMsg: "",
-  confirmTeam: null,
-  newTeamName: "",
-  newMemberInputs: {},
-  teamMgrOpen: false,
-  viewTeam: "",
-  viewMember: "",
-  adminPw: "",
+// ══════════════════════════════
+//  全域狀態
+// ══════════════════════════════
+var S = {
+  tab:"submit", teams:{}, records:{},
+  adminUnlocked:false, adminPw:"",
+  photos:{ photo1:null, photo2:null, photo3:null, photo4:null },
+  selMember:"", submitMsg:"", submitting:false,
+  editTarget:{ member:"", fromDate:"", toDate:"" }, editMsg:"",
+  confirmTeam:null, newTeamName:"", newMemberInputs:{}, teamMgrOpen:false,
 };
 
-// ── Firebase 監聽 ──
-onValue(ref(db, "teams"),   snap => { state.teams   = snap.val() || {}; render(); });
-onValue(ref(db, "records"), snap => { state.records = snap.val() || {}; render(); });
+// ══════════════════════════════
+//  Firebase 監聽
+// ══════════════════════════════
+db.ref("teams").on("value", snap => {
+  S.teams = snap.val() || {};
+  render();
+});
+db.ref("records").on("value", snap => {
+  S.records = snap.val() || {};
+  render();
+});
 
-// ── 計算 ──
+// ══════════════════════════════
+//  計算函式
+// ══════════════════════════════
 function memberDays(member) {
-  const rec = state.records[member] || {};
-  return Object.keys(rec).filter(d => d >= ACT_START_STR && d <= ACT_END_STR).length;
+  const rec = S.records[member] || {};
+  return Object.keys(rec).filter(d => d >= ACT_START && d <= ACT_END).length;
 }
 function teamMinDays(team) {
-  const members = state.teams[team] || [];
-  if (!members.length) return 0;
-  return Math.min(...members.map(m => memberDays(m)));
+  const mbs = S.teams[team] || [];
+  if (!mbs.length) return 0;
+  return Math.min.apply(null, mbs.map(m => memberDays(m)));
 }
 function allMembers() {
-  return Object.entries(state.teams).flatMap(([team, members]) =>
-    (members || []).map(m => ({ name: m, team }))
-  );
+  return Object.entries(S.teams).flatMap(([t,mbs]) => (mbs||[]).map(m => ({name:m,team:t})));
 }
 function globalProgress() {
   const all = allMembers();
   if (!all.length) return 0;
-  return (all.reduce((a, m) => a + memberDays(m.name), 0) / (all.length * TOTAL_DAYS)) * 100;
+  return (all.reduce((a,m) => a + memberDays(m.name), 0) / (all.length * TOTAL_DAYS)) * 100;
 }
 
-// ── 上傳照片到 Cloudinary ──
-async function uploadPhoto(file, path) {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", CLOUDINARY_PRESET);
-  formData.append("folder", path.replace(/\/[^\/]+$/, "")); // 用資料夾組織
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
-    { method: "POST", body: formData }
-  );
+// ══════════════════════════════
+//  Cloudinary 上傳
+// ══════════════════════════════
+async function uploadPhoto(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", CLOUDINARY_PRESET);
+  const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {method:"POST",body:fd});
   const data = await res.json();
   if (!data.secure_url) throw new Error(data.error?.message || "上傳失敗");
   return data.secure_url;
 }
 
-// ── 提交任務 ──
+// ══════════════════════════════
+//  提交任務
+// ══════════════════════════════
 async function handleSubmit() {
-  const { selMember, photos } = state;
-  if (!selMember) return setMsg("⚠️ 請選擇姓名");
-  if (!photos.photo1 || !photos.photo2 || !photos.photo3 || !photos.photo4)
-    return setMsg("⚠️ 四張照片都要上傳才能完成任務！");
   const today = getTWToday();
-  if (state.records[selMember]?.[today]) return setMsg("⚠️ 今天已提交過囉！");
-
-  state.submitting = true; setMsg("上傳中，請稍候…"); render();
+  if (!S.selMember) return showMsg("⚠️ 請選擇姓名");
+  if (!S.photos.photo1||!S.photos.photo2||!S.photos.photo3||!S.photos.photo4)
+    return showMsg("⚠️ 四張照片都要上傳才能完成任務！");
+  if (S.records[S.selMember]?.[today]) return showMsg("⚠️ 今天已提交過囉！");
+  S.submitting = true; showMsg("上傳中，請稍候⋯"); render();
   try {
-    const base = `records/${selMember}/${today}`;
-    const [url1, url2, url3, url4] = await Promise.all([
-      uploadPhoto(photos.photo1, `${base}/photo1`),
-      uploadPhoto(photos.photo2, `${base}/photo2`),
-      uploadPhoto(photos.photo3, `${base}/photo3`),
-      uploadPhoto(photos.photo4, `${base}/photo4`),
+    const [u1,u2,u3,u4] = await Promise.all([
+      uploadPhoto(S.photos.photo1), uploadPhoto(S.photos.photo2),
+      uploadPhoto(S.photos.photo3), uploadPhoto(S.photos.photo4),
     ]);
-    await set(ref(db, `records/${selMember}/${today}`), {
-      ts: new Date().toISOString(), photo1: url1, photo2: url2, photo3: url3, photo4: url4
+    await db.ref(`records/${S.selMember}/${today}`).set({
+      ts: new Date().toISOString(), photo1:u1, photo2:u2, photo3:u3, photo4:u4
     });
-    state.photos = { photo1: null, photo2: null, photo3: null, photo4: null };
-    setMsg("🎉 任務完成！打倒今日怪物！");
-  } catch (e) {
-    setMsg("❌ 上傳失敗：" + e.message);
-  }
-  state.submitting = false; render();
+    S.photos = {photo1:null,photo2:null,photo3:null,photo4:null};
+    showMsg("🎉 任務完成！打倒今日怪物！");
+  } catch(e) { showMsg("❌ 上傳失敗：" + e.message); }
+  S.submitting = false; render();
 }
+function showMsg(m){ S.submitMsg=m; render(); }
 
-function setMsg(m) { state.submitMsg = m; render(); }
-
-// ── 管理員：移動日期 ──
+// ══════════════════════════════
+//  管理員：移動日期
+// ══════════════════════════════
 async function handleMoveDate() {
-  const { member, fromDate, toDate } = state.editTarget;
-  if (!member || !fromDate || !toDate) return setEditMsg("⚠️ 請填寫完整欄位");
-  if (fromDate === toDate) return setEditMsg("⚠️ 來源與目標日期相同");
-  const rec = state.records[member]?.[fromDate];
-  if (!rec) return setEditMsg("⚠️ 該成員在來源日期沒有紀錄");
-  if (state.records[member]?.[toDate]) return setEditMsg("⚠️ 目標日期已有紀錄");
-  await set(ref(db, `records/${member}/${toDate}`), { ...rec, adminMoved: true, movedAt: new Date().toISOString() });
-  await remove(ref(db, `records/${member}/${fromDate}`));
-  setEditMsg(`✅ 已將 ${member} 的 ${fromDate} 移至 ${toDate}`);
-  state.editTarget = { member: "", fromDate: "", toDate: "" };
+  const {member,fromDate,toDate} = S.editTarget;
+  if (!member||!fromDate||!toDate) return showEditMsg("⚠️ 請填寫完整欄位");
+  if (fromDate===toDate) return showEditMsg("⚠️ 來源與目標日期相同");
+  const rec = (S.records[member]||{})[fromDate];
+  if (!rec) return showEditMsg("⚠️ 該成員在來源日期沒有紀錄");
+  if ((S.records[member]||{})[toDate]) return showEditMsg("⚠️ 目標日期已有紀錄");
+  await db.ref(`records/${member}/${toDate}`).set({...rec, adminMoved:true, movedAt:new Date().toISOString()});
+  await db.ref(`records/${member}/${fromDate}`).remove();
+  showEditMsg(`✅ 已將 ${member} 的 ${fromDate} 移至 ${toDate}`);
+  S.editTarget = {member:"",fromDate:"",toDate:""};
 }
-function setEditMsg(m) { state.editMsg = m; render(); }
+function showEditMsg(m){ S.editMsg=m; render(); }
 
-// ── 管理員：刪除紀錄 ──
+// ══════════════════════════════
+//  管理員：刪除紀錄
+// ══════════════════════════════
 async function handleDeleteRecord(member, date) {
-  await remove(ref(db, `records/${member}/${date}`));
+  await db.ref(`records/${member}/${date}`).remove();
 }
 
-// ── 隊伍管理 ──
+// ══════════════════════════════
+//  隊伍管理
+// ══════════════════════════════
 async function saveTeams(data) {
-  await set(ref(db, "teams"), data);
+  await db.ref("teams").set(data);
 }
 async function addTeam() {
-  const name = state.newTeamName.trim();
-  if (!name || state.teams[name]) return;
-  await saveTeams({ ...state.teams, [name]: [] });
-  state.newTeamName = ""; render();
+  const name = S.newTeamName.trim();
+  if (!name || S.teams[name]) return;
+  const next = Object.assign({}, S.teams);
+  next[name] = [];
+  await saveTeams(next);
+  S.newTeamName = ""; render();
 }
 async function addMember(team) {
-  const name = (state.newMemberInputs[team] || "").trim();
-  if (!name || (state.teams[team] || []).includes(name)) return;
-  const updated = { ...state.teams, [team]: [...(state.teams[team] || []), name] };
-  await saveTeams(updated);
-  state.newMemberInputs[team] = ""; render();
+  const name = (S.newMemberInputs[team]||"").trim();
+  if (!name||(S.teams[team]||[]).includes(name)) return;
+  const next = Object.assign({}, S.teams);
+  next[team] = [...(next[team]||[]), name];
+  await saveTeams(next);
+  S.newMemberInputs[team] = ""; render();
 }
 async function deleteMember(team, member) {
-  const updated = { ...state.teams, [team]: state.teams[team].filter(m => m !== member) };
-  await saveTeams(updated);
+  const next = Object.assign({}, S.teams);
+  next[team] = next[team].filter(m => m !== member);
+  await saveTeams(next);
 }
 async function confirmDeleteTeam() {
-  const t = state.confirmTeam;
-  if (!t) return;
-  const next = { ...state.teams };
+  const t = S.confirmTeam; if (!t) return;
+  const next = Object.assign({}, S.teams);
   delete next[t];
   await saveTeams(next);
-  state.confirmTeam = null; render();
+  S.confirmTeam = null; render();
 }
 
-// ════════════════════════════════════════════
-// RENDER
-// ════════════════════════════════════════════
+// ══════════════════════════════
+//  RENDER
+// ══════════════════════════════
 function render() {
   document.getElementById("app").innerHTML = buildHTML();
-  bindEvents();
 }
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 function buildHTML() {
-  const today  = getTWToday();
-  const actDay = getActivityDay();
-  const { tab, teams, records, adminUnlocked, photos, selMember, submitMsg,
-          submitting, editTarget, editMsg, confirmTeam,
-          newTeamName, newMemberInputs, teamMgrOpen,
-          viewTeam, viewMember, adminPw } = state;
+  var today  = getTWToday();
+  var actDay = getActivityDay();
+  var bossHP = Math.max(0, 100 - globalProgress());
+  var bossColor = bossHP > 60 ? "#e74c3c" : bossHP > 30 ? "#e67e22" : "#2ecc71";
 
-  // ── helpers ──
-  const photoPreview = (key, label, icon) => {
-    const val = photos[key];
-    if (val) {
-      const src = val instanceof File ? URL.createObjectURL(val) : val;
-      return `<div class="upload-box uploaded">
-        <div class="preview-wrap">
-          <img src="${src}" class="preview-img" alt="${label}" />
-          <div class="preview-badge">✅ ${label}</div>
-          <button class="remove-btn" onclick="removePhoto('${key}')">✕</button>
-        </div></div>`;
-    }
-    return `<div class="upload-box" onclick="triggerFile('${key}')">
-      <div class="upload-placeholder">
-        <span class="upload-icon">${icon}</span>
-        <span class="upload-label">${label}</span>
-        <span class="upload-hint">點擊上傳照片</span>
-      </div>
-      <input type="file" id="file_${key}" accept="image/*" style="display:none"
-        onchange="handleFile('${key}', this)" />
-    </div>`;
-  };
+  // 分頁按鈕
+  var tabs = ["submit|⚔️ 提交任務","view|📊 查看進度","admin|🔑 管理員"].map(function(t){
+    var p=t.split("|"); return '<button class="tab-btn'+(S.tab===p[0]?" active":"")+'" onclick="S.tab=\''+p[0]+'\';render()">'+p[1]+'</button>';
+  }).join("");
 
-  const progressBar = (pct, color, label) =>
-    `<div class="progress-wrap">
-      <div class="progress-label">${label}</div>
-      <div class="progress-track">
-        <div class="progress-fill" style="width:${pct}%;background:${color}"></div>
-        <span class="progress-pct">${Math.round(pct)}%</span>
-      </div>
-    </div>`;
+  var content = S.tab==="submit" ? buildSubmit(today)
+              : S.tab==="view"   ? buildView()
+              : buildAdmin();
 
-  const globalPct = globalProgress();
-  const bossHP    = Math.max(0, 100 - globalPct);
-
-  // ── SUBMIT TAB ──
-  const submitTab = () => {
-    const already = records[selMember]?.[today];
-    const memberOptions = Object.entries(teams).map(([team, mbs]) =>
-      `<optgroup label="${team}">${(mbs||[]).map(m =>
-        `<option value="${m}" ${m===selMember?"selected":""}>${m}</option>`).join("")}</optgroup>`
-    ).join("");
-
-    return `<div class="panel">
-      <div class="panel-title">⚔️ 今日任務上傳</div>
-      <div class="date-badge">📅 台灣時間今日：${today}</div>
-      <div class="field">
-        <label class="field-label">👤 選擇你的名字</label>
-        <select class="select" onchange="setState('selMember',this.value);setState('submitMsg','')">
-          <option value="">── 請選擇 ──</option>${memberOptions}
-        </select>
-      </div>
-      ${selMember && already ? `<div class="already-done">✅ ${selMember} 今天已完成任務！明天繼續打怪💪</div>` : ""}
-      ${selMember && !already ? `
-        <div class="tasks-grid">
-          ${photoPreview("photo1","新增群友","👥")}
-          ${photoPreview("photo2","暖群友","🔥")}
-          ${photoPreview("photo3","市調","📋")}
-          ${photoPreview("photo4","使用產品","🌿")}
-        </div>
-        <div class="task-hint">💡 市調：居家購物清單 · 強連結 · 商展 · 評估　｜　🌿 使用產品：放群組照片或影片＋寫下感受</div>
-        <button class="submit-btn ${submitting?"loading":""}" data-action="handleSubmit" ${submitting?"disabled":""}>
-          ${submitting ? "上傳中..." : "⚔️ 完成今日任務！打怪！"}
-        </button>
-        ${submitMsg ? `<div class="msg ${submitMsg.startsWith("🎉")?"success":"error"}">${submitMsg}</div>` : ""}
-      ` : ""}
-    </div>`;
-  };
-
-  // ── VIEW TAB ──
-  const viewTab = () => {
-    const teamBlocks = Object.entries(teams).map(([team, members]) => {
-      const mbs     = members || [];
-      const minDays = teamMinDays(team);
-      const minPct  = Math.min((minDays / 21) * 100, 100);
-      const bossColor = minDays >= 21 ? "#2ecc71" : minDays >= 14 ? "#e67e22" : "#e74c3c";
-      const bossHpPct = Math.max(0, 100 - (minDays / 21) * 100);
-
-      const memberCards = mbs.map(member => {
-        const days = memberDays(member);
-        const pct  = (days / TOTAL_DAYS) * 100;
-        const dots = Array.from({length: TOTAL_DAYS}, (_, i) => {
-          const d = new Date("2026-06-01"); d.setDate(d.getDate() + i);
-          const k = d.toISOString().split("T")[0];
-          const done = !!(records[member]?.[k]);
-          return `<div class="day-dot ${done?"done":""}" title="第${i+1}天 ${k}"></div>`;
-        }).join("");
-        const earned = days >= 21;
-        return `<div class="member-card">
-          <div class="member-name">${member}</div>
-          <div class="member-days-row-card">
-            <span class="member-days">${days} / ${TOTAL_DAYS} 天</span>
-            <span class="personal-reward-tag ${earned?"earned":""}">
-              ${earned ? "✅ 💰 報名費已達標" : `🔒 還差 ${21-days} 天拿回100元`}
-            </span>
-          </div>
-          ${progressBar(pct, "#22d3ee", "")}
-          <div class="day-dots">${dots}</div>
-        </div>`;
-      }).join("");
-
-      const teamUnlocked = minDays >= 21;
-      return `<div class="team-block">
-        <div class="team-header">
-          <span class="team-name">${team}</span>
-          <span class="team-min-days">全隊最低 ${minDays} 天</span>
-        </div>
-        <div class="team-monster-hp">
-          <span class="team-monster-emoji">👾</span>
-          <div class="team-hp-track">
-            <div class="team-hp-fill" style="width:${bossHpPct}%;background:${bossColor}"></div>
-          </div>
-          <span class="team-hp-label">Boss HP ${Math.round(bossHpPct)}%</span>
-        </div>
-        <div class="reward-banner-wrap">
-          <div class="milestone-bar-wrap">
-            <div class="milestone-track">
-              <div class="milestone-fill" style="width:${minPct}%"></div>
-              <div class="milestone-marker ${minDays>=21?"reached":""}" style="left:100%;border-color:${TEAM_REWARD.color}">
-                <span class="ms-icon">${TEAM_REWARD.icon}</span>
-              </div>
-            </div>
-            <div class="milestone-labels" style="height:28px">
-              <div class="ms-label ${minDays>=21?"reached":""}" style="left:100%;color:${TEAM_REWARD.color}">
-                21天<br/>${TEAM_REWARD.icon}${TEAM_REWARD.label}
-              </div>
-            </div>
-          </div>
-          <div class="team-reward-badge ${teamUnlocked?"unlocked":"locked"}"
-            style="${teamUnlocked?`border-color:${TEAM_REWARD.color};color:${TEAM_REWARD.color};background:${TEAM_REWARD.color}18`:""}">
-            ${teamUnlocked
-              ? `✅ 全隊達標！${TEAM_REWARD.icon} ${TEAM_REWARD.label}`
-              : `🔒 全隊都完成21天 → ${TEAM_REWARD.icon} ${TEAM_REWARD.label}（還差 ${21-minDays} 天）`}
-          </div>
-        </div>
-        <div class="members-grid">${memberCards}</div>
-      </div>`;
-    }).join("");
-
-    return `<div class="panel">
-      <div class="panel-title">📊 戰況總覽</div>
-      ${teamBlocks || "<div style='color:var(--muted);text-align:center;padding:40px'>尚未設定隊伍，請管理員新增</div>"}
-    </div>`;
-  };
-
-  // ── ADMIN TAB ──
-  const adminTab = () => {
-    if (!adminUnlocked) return `<div class="panel">
-      <div class="panel-title">🔑 管理員審核</div>
-      <div class="admin-login">
-        <input type="password" class="select" placeholder="輸入管理員密碼"
-          value="${adminPw}" onchange="setState('adminPw',this.value)"
-          onkeydown="if(event.key==='Enter')tryAdminLogin()" />
-        <button class="submit-btn" data-action="tryAdminLogin">解鎖</button>
-      </div></div>`;
-
-    const allMbs = allMembers();
-    const totalCheckIns = allMbs.reduce((a, m) => a + memberDays(m.name), 0);
-
-    // ── 排名圖表 ──
-    const teamData = Object.entries(teams).map(([team, mbs]) => {
-      const members = mbs || [];
-      const totalDays = members.reduce((a, m) => a + memberDays(m), 0);
-      const minDays   = members.length ? Math.min(...members.map(m => memberDays(m))) : 0;
-      const avgDays   = members.length ? totalDays / members.length : 0;
-      return { team, members, totalDays, minDays, avgDays };
-    }).sort((a, b) => b.totalDays - a.totalDays);
-    const maxTotal = Math.max(...teamData.map(t => t.totalDays), 1);
-    const medals = ["🥇","🥈","🥉"];
-
-    const rankBars = teamData.map((td, i) => {
-      const barPct = (td.totalDays / maxTotal) * 100;
-      const bg = i===0?"linear-gradient(90deg,#f5a623,#f0532a)"
-                :i===1?"linear-gradient(90deg,#a855f7,#6366f1)"
-                :"linear-gradient(90deg,#22d3ee,#06b6d4)";
-      return `<div class="rank-row">
-        <div class="rank-medal">${medals[i]||"#"+(i+1)}</div>
-        <div class="rank-team-name">${td.team}</div>
-        <div class="rank-bar-wrap">
-          <div class="rank-bar" style="width:${barPct}%;background:${bg}"></div>
-          <span class="rank-bar-num">${td.totalDays} 天</span>
-        </div>
-      </div>`;
-    }).join("");
-
-    const rankTableRows = teamData.map((td, i) => {
-      const unlockedMs = [PERSONAL_REWARD, TEAM_REWARD].filter(ms => td.minDays >= ms.days);
-      return `<div class="rank-table-row ${i===0?"rank-first":""}">
-        <span>${medals[i]||"#"+(i+1)} ${td.team}</span>
-        <span class="rank-num">${td.totalDays}</span>
-        <span class="rank-num">${td.avgDays.toFixed(1)}</span>
-        <span class="rank-num">${td.minDays}</span>
-        <span>${unlockedMs.length ? unlockedMs.map(ms=>`<span class="reward-chip">${ms.icon}</span>`).join("") : '<span class="no-reward">—</span>'}</span>
-      </div>`;
-    }).join("");
-
-    const memberDaysGroups = teamData.map(td => {
-      const sorted = [...td.members].map(m=>({name:m,days:memberDays(m)})).sort((a,b)=>b.days-a.days);
-      const rows = sorted.map((m, mi) => {
-        const milestoneMarks = [PERSONAL_REWARD, TEAM_REWARD].map(ms =>
-          `<div class="member-days-milestone" style="left:${(ms.days/TOTAL_DAYS)*100}%"></div>`
-        ).join("");
-        return `<div class="member-days-row">
-          <span class="member-days-rank">#${mi+1}</span>
-          <span class="member-days-name">${m.name}</span>
-          <div class="member-days-bar-wrap">
-            <div class="member-days-bar" style="width:${(m.days/TOTAL_DAYS)*100}%"></div>
-            ${milestoneMarks}
-          </div>
-          <span class="member-days-num">${m.days} 天</span>
-        </div>`;
-      }).join("");
-      return `<div class="member-days-group">
-        <div class="member-days-team">${td.team}</div>${rows}
-      </div>`;
-    }).join("");
-
-    // ── 隊伍管理 ──
-    const teamCards = Object.entries(teams).map(([team, mbs]) => {
-      const tags = (mbs||[]).map(m =>
-        `<div class="team-mgmt-member-tag">${m}
-          <button onclick="deleteMemberAction('${team}','${m}')">✕</button>
-        </div>`
-      ).join("");
-      return `<div class="team-mgmt-card">
-        <div class="team-mgmt-header">
-          <span class="team-mgmt-name">${team}</span>
-          <span class="team-mgmt-count">${(mbs||[]).length} 人</span>
-          <button class="team-mgmt-del-team" onclick="setConfirmTeam('${team}')">🗑️ 刪除整隊</button>
-        </div>
-        <div class="team-mgmt-members">${tags||"<span style='color:var(--muted);font-size:12px'>尚無成員</span>"}</div>
-        <div class="team-mgmt-add-row">
-          <input class="select small" placeholder="輸入成員姓名"
-            value="${newMemberInputs[team]||""}"
-            oninput="setNewMemberInput('${team}',this.value)"
-            onkeydown="if(event.key==='Enter')addMemberAction('${team}')" />
-          <button class="move-btn" onclick="addMemberAction('${team}')">＋ 新增</button>
-        </div>
-      </div>`;
-    }).join("");
-
-    const confirmDialog = confirmTeam ? `<div class="confirm-dialog">
-      <span>確定刪除「${confirmTeam}」整隊？此操作無法復原。</span>
-      <div class="confirm-btns">
-        <button class="confirm-yes" data-action="confirmDeleteTeam">確定刪除</button>
-        <button class="confirm-no" onclick="setState('confirmTeam',null)">取消</button>
-      </div></div>` : "";
-
-    // ── 逐人審核 ──
-    const memberReviews = allMbs.map(({ name: member, team }) => {
-      const memberRec = records[member] || {};
-      const dates = Object.keys(memberRec).sort();
-      if (!dates.length) return "";
-      const dayRows = dates.map(date => {
-        const rec = memberRec[date];
-        const photos = [
-          { key:"photo1", label:"👥 新增群友" },
-          { key:"photo2", label:"🔥 暖群友" },
-          { key:"photo3", label:"📋 市調" },
-          { key:"photo4", label:"🌿 使用產品" },
-        ].map(({key, label}) =>
-          `<div class="admin-photo-wrap">
-            <div class="admin-photo-label">${label}</div>
-            ${rec[key]
-              ? `<a href="${rec[key]}" target="_blank"><img src="${rec[key]}" class="admin-photo" /></a>`
-              : `<div class="admin-no-photo">未上傳</div>`}
-          </div>`
-        ).join("");
-        return `<div class="admin-day">
-          <div class="admin-date-row">
-            <span>📅 ${date}</span>
-            ${rec.adminMoved?'<span class="moved-badge">已移動</span>':""}
-            <button class="delete-btn" onclick="handleDeleteRecord('${member}','${date}')">🗑️ 刪除</button>
-          </div>
-          <div class="admin-photos">${photos}</div>
-        </div>`;
-      }).join("");
-      return `<details class="admin-member">
-        <summary class="admin-member-title">
-          ${member} <span class="admin-team-tag">${team}</span>
-          <span class="admin-count">${dates.length} 天</span>
-        </summary>${dayRows}
-      </details>`;
-    }).join("");
-
-    const memberOptions = Object.entries(teams).map(([team, mbs]) =>
-      `<optgroup label="${team}">${(mbs||[]).map(m =>
-        `<option value="${m}" ${m===editTarget.member?"selected":""}>${m}</option>`).join("")}</optgroup>`
-    ).join("");
-
-    return `<div class="panel">
-      <div class="panel-title">🔑 管理員審核</div>
-      <div class="admin-panel">
-
-        <div class="admin-stats">
-          <div class="stat-card"><div class="stat-num">${allMbs.length}</div><div class="stat-lbl">總成員</div></div>
-          <div class="stat-card"><div class="stat-num">${totalCheckIns}</div><div class="stat-lbl">總打卡次數</div></div>
-          <div class="stat-card"><div class="stat-num">${Math.round(globalProgress())}%</div><div class="stat-lbl">全體完成率</div></div>
-        </div>
-
-        <div class="chart-section">
-          <div class="section-title">🏆 隊伍排名（總打卡天數）</div>
-          <div class="rank-chart">${rankBars}</div>
-          <div class="rank-table">
-            <div class="rank-table-head"><span>隊伍</span><span>總天數</span><span>平均</span><span>最低</span><span>獎勵</span></div>
-            ${rankTableRows}
-          </div>
-          <div class="section-title" style="margin-top:20px">👤 各成員完成天數</div>
-          ${memberDaysGroups}
-        </div>
-
-        <div class="team-mgmt-section">
-          <button class="team-mgmt-toggle" onclick="setState('teamMgrOpen',!state.teamMgrOpen)">
-            👥 隊伍與成員管理 ${teamMgrOpen?"▲":"▼"}
-          </button>
-          ${teamMgrOpen ? `<div class="team-mgmt-body">
-            ${confirmDialog}
-            ${teamCards}
-            <div class="team-mgmt-new-team">
-              <div class="field-label">新增隊伍</div>
-              <div class="team-mgmt-add-row">
-                <input class="select small" placeholder="隊伍名稱（例如：🐉 龍隊）"
-                  value="${newTeamName}"
-                  oninput="setState('newTeamName',this.value)"
-                  onkeydown="if(event.key==='Enter')addTeam()" />
-                <button class="move-btn" data-action="addTeam">＋ 建立隊伍</button>
-              </div>
-            </div>
-          </div>` : ""}
-        </div>
-
-        <div class="admin-move-section">
-          <div class="section-title">🗓️ 移動紀錄日期</div>
-          <div class="admin-move-grid">
-            <div>
-              <div class="field-label">成員</div>
-              <select class="select small" onchange="setEditTarget('member',this.value)">
-                <option value="">請選擇</option>${memberOptions}
-              </select>
-            </div>
-            <div>
-              <div class="field-label">來源日期</div>
-              <input type="date" class="select small" value="${editTarget.fromDate}"
-                onchange="setEditTarget('fromDate',this.value)" />
-            </div>
-            <div>
-              <div class="field-label">移至日期</div>
-              <input type="date" class="select small" value="${editTarget.toDate}"
-                onchange="setEditTarget('toDate',this.value)" />
-            </div>
-            <div class="move-btn-wrap">
-              <button class="move-btn" data-action="handleMoveDate">移動</button>
-            </div>
-          </div>
-          ${editMsg ? `<div class="msg ${editMsg.startsWith("✅")?"success":"error"}" style="margin-top:8px">${editMsg}</div>` : ""}
-        </div>
-
-        <div class="section-title">📷 逐人審核</div>
-        ${memberReviews || "<div style='color:var(--muted);font-size:13px;padding:20px 0'>目前無人打卡</div>"}
-      </div>
-    </div>`;
-  };
-
-  const tabs = [
-    {key:"submit", label:"⚔️ 提交任務"},
-    {key:"view",   label:"📊 查看進度"},
-    {key:"admin",  label:"🔑 管理員"},
-  ].map(t => `<button class="tab-btn ${tab===t.key?"active":""}" onclick="setState('tab','${t.key}')">${t.label}</button>`).join("");
-
-  const bossHPColor = bossHP > 60 ? "#e74c3c" : bossHP > 30 ? "#e67e22" : "#2ecc71";
-
-  return `
-  <div class="bg-grid"></div>
-  <header class="hero">
-    <div class="hero-badge">⚔️ 21天打怪挑戰</div>
-    <h1 class="hero-title">重啟行動力<br/><span class="hero-sub">1 · 1 · 1 · 1</span></h1>
-    <p class="hero-desc">6/1 – 6/28｜3人同行 21天｜完成任務 免費🥩請你吃</p>
-    <div class="monster-hp">
-      <div class="monster-emoji">👾</div>
-      <div class="hp-track">
-        <div class="hp-fill" style="width:${bossHP}%;background:${bossHPColor}"></div>
-      </div>
-      <div class="hp-label">Boss HP ${Math.round(bossHP)}%</div>
-    </div>
-    <div class="hero-day">${actDay ? `🗡️ 活動第 ${actDay} 天 / ${TOTAL_DAYS} 天` : "活動期間：6/1 – 6/28"}</div>
-  </header>
-  <nav class="tabs">${tabs}</nav>
-  <main class="main">
-    ${tab==="submit" ? submitTab() : tab==="view" ? viewTab() : adminTab()}
-  </main>
-  <footer class="footer">重啟行動力 1-1-1-1 ｜ 香綺大C ⚔️</footer>`;
+  return '<div class="bg-grid"></div>'
+    +'<header class="hero">'
+    +'<div class="hero-badge">⚔️ 21天打怪挑戰</div>'
+    +'<h1 class="hero-title">重啟行動力<br><span class="hero-sub">1 · 1 · 1 · 1</span></h1>'
+    +'<p class="hero-desc">6/1 – 6/28｜3人同行 21天｜完成任務 免費🥩請你吃</p>'
+    +'<div class="monster-hp"><div class="monster-emoji">👾</div>'
+    +'<div class="hp-track"><div class="hp-fill" style="width:'+Math.round(bossHP)+'%;background:'+bossColor+'"></div></div>'
+    +'<div class="hp-label">Boss HP '+Math.round(bossHP)+'%</div></div>'
+    +'<div class="hero-day">'+(actDay?'🗡️ 活動第 '+actDay+' 天 / '+TOTAL_DAYS+' 天':'活動期間：6/1 – 6/28')+'</div>'
+    +'</header>'
+    +'<nav class="tabs">'+tabs+'</nav>'
+    +'<main class="main">'+content+'</main>'
+    +'<footer class="footer">重啟行動力 1-1-1-1 ｜ 香綺大C ⚔️</footer>';
 }
 
-// ── 事件綁定 ──
-function bindEvents() {}
+// ── 提交任務 ──
+function buildSubmit(today) {
+  var already = S.records[S.selMember] && S.records[S.selMember][today];
+  var opts = Object.entries(S.teams).map(function(e){
+    var team=e[0], mbs=e[1]||[];
+    return '<optgroup label="'+esc(team)+'">'+mbs.map(function(m){
+      return '<option value="'+esc(m)+'"'+(m===S.selMember?' selected':'')+'>'+esc(m)+'</option>';
+    }).join("")+'</optgroup>';
+  }).join("");
 
-// ── 全域函式（HTML onclick 用）──
-// 確保所有函式掛到 window（module script 需要明確指派）
-Object.assign(window, {
-  state,
-  setState        : (k, v) => { state[k] = v; render(); },
-  setEditTarget   : (k, v) => { state.editTarget[k] = v; render(); },
-  setNewMemberInput:(team,v)=> { state.newMemberInputs[team] = v; },
-  setConfirmTeam  : (t)    => { state.confirmTeam = t; render(); },
-  triggerFile     : (key)  => document.getElementById("file_"+key)?.click(),
-  removePhoto     : (key)  => { state.photos[key] = null; render(); },
-  handleFile      : (key, input) => { const f=input.files[0]; if(!f)return; state.photos[key]=f; render(); },
-  handleSubmit,
-  handleMoveDate,
-  handleDeleteRecord,
-  addTeam,
-  addMemberAction : addMember,
-  deleteMemberAction: deleteMember,
-  confirmDeleteTeam,
-  saveTeams,
-  tryAdminLogin   : () => {
-    if (state.adminPw === ADMIN_PW) { state.adminUnlocked = true; render(); }
-    else alert("密碼錯誤");
-  },
-});
-window.state = state;
-window.setState        = (k, v) => { state[k] = v; render(); };
-window.setEditTarget   = (k, v) => { state.editTarget[k] = v; render(); };
-window.setNewMemberInput = (team, v) => { state.newMemberInputs[team] = v; };
-window.setConfirmTeam  = (t) => { state.confirmTeam = t; render(); };
-window.triggerFile     = (key) => document.getElementById("file_"+key)?.click();
-window.removePhoto     = (key) => { state.photos[key] = null; render(); };
-window.handleFile      = (key, input) => {
-  const f = input.files[0];
-  if (!f) return;
-  state.photos[key] = f;
-  render();
-};
-window.handleSubmit      = handleSubmit;
-window.handleMoveDate    = handleMoveDate;
-window.handleDeleteRecord = handleDeleteRecord;
-window.addTeam           = addTeam;
-window.addMemberAction   = addMember;
-window.deleteMemberAction = deleteMember;
-window.confirmDeleteTeam = confirmDeleteTeam;
-window.tryAdminLogin     = () => {
-  if (state.adminPw === ADMIN_PW) { state.adminUnlocked = true; render(); }
-  else alert("密碼錯誤");
-};
+  var photoBoxes = [
+    {key:"photo1",label:"新增群友",icon:"👥"},
+    {key:"photo2",label:"暖群友",icon:"🔥"},
+    {key:"photo3",label:"市調",icon:"📋"},
+    {key:"photo4",label:"使用產品",icon:"🌿"},
+  ].map(function(p){ return photoBox(p.key,p.label,p.icon); }).join("");
 
-// ── 事件委派：處理所有動態按鈕的 click（解決 module script timing 問題）──
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-action]");
-  if (!btn) return;
-  const action = btn.dataset.action;
-  const arg1   = btn.dataset.arg1 || "";
-  const arg2   = btn.dataset.arg2 || "";
-  if (window[action]) window[action](arg1, arg2);
-});
+  return '<div class="panel">'
+    +'<div class="panel-title">⚔️ 今日任務上傳</div>'
+    +'<div class="date-badge">📅 台灣時間今日：'+today+'</div>'
+    +'<div class="field"><label class="field-label">👤 選擇你的名字</label>'
+    +'<select class="select" onchange="S.selMember=this.value;S.submitMsg=\'\';render()">'
+    +'<option value="">── 請選擇 ──</option>'+opts+'</select></div>'
+    +(S.selMember && already ? '<div class="already-done">✅ '+esc(S.selMember)+' 今天已完成任務！明天繼續打怪💪</div>' : '')
+    +(S.selMember && !already ? '<div class="tasks-grid">'+photoBoxes+'</div>'
+      +'<div class="task-hint">💡 市調：居家購物清單 · 強連結 · 商展 · 評估　｜　🌿 使用產品：放群組照片或影片＋寫下感受</div>'
+      +'<button class="submit-btn'+(S.submitting?' loading':'')+'" onclick="handleSubmit()" '+(S.submitting?'disabled':'')+'>'+( S.submitting?'上傳中...':'⚔️ 完成今日任務！打怪！')+'</button>'
+      +(S.submitMsg?'<div class="msg '+(S.submitMsg.startsWith('🎉')?'success':'error')+'">'+esc(S.submitMsg)+'</div>':'')
+    : '')
+    +'</div>';
+}
 
-// 初始 render — 等 DOM ready 再執行
-document.addEventListener("DOMContentLoaded", () => {
-  render();
-});
-// 若 DOM 已經 ready（module 有時候晚載入）
-if (document.readyState !== "loading") render();
+function photoBox(key,label,icon) {
+  var val = S.photos[key];
+  if (val) {
+    var src = (val instanceof File) ? URL.createObjectURL(val) : val;
+    return '<div class="upload-box uploaded">'
+      +'<div class="preview-wrap"><img src="'+src+'" class="preview-img"/>'
+      +'<div class="preview-badge">✅ '+label+'</div>'
+      +'<button class="remove-btn" onclick="S.photos[\''+key+'\']=null;render()">✕</button>'
+      +'</div></div>';
+  }
+  return '<div class="upload-box" onclick="document.getElementById(\'f_'+key+'\').click()">'
+    +'<div class="upload-placeholder">'
+    +'<span class="upload-icon">'+icon+'</span>'
+    +'<span class="upload-label">'+label+'</span>'
+    +'<span class="upload-hint">點擊上傳照片</span>'
+    +'</div>'
+    +'<input type="file" id="f_'+key+'" accept="image/*" style="display:none" '
+    +'onchange="var f=this.files[0];if(f){S.photos[\''+key+'\']=f;render()}">'
+    +'</div>';
+}
+
+// ── 查看進度 ──
+function buildView() {
+  if (!Object.keys(S.teams).length)
+    return '<div class="panel"><div class="panel-title">📊 戰況總覽</div>'
+      +'<div style="color:var(--muted);text-align:center;padding:40px">尚未設定隊伍，請管理員新增</div></div>';
+
+  var blocks = Object.entries(S.teams).map(function(e){
+    var team=e[0], mbs=e[1]||[];
+    var minDays = teamMinDays(team);
+    var minPct  = Math.min((minDays/21)*100,100);
+    var bossHPpct = Math.max(0,100-(minDays/21)*100);
+    var bossColor = minDays>=21?"#2ecc71":minDays>=14?"#e67e22":"#e74c3c";
+    var teamUnlocked = minDays>=21;
+
+    var cards = mbs.map(function(member){
+      var days = memberDays(member);
+      var pct  = (days/TOTAL_DAYS)*100;
+      var earned = days>=21;
+      var dots = "";
+      for(var i=0;i<TOTAL_DAYS;i++){
+        var d=new Date("2026-06-01"); d.setDate(d.getDate()+i);
+        var k=d.toISOString().split("T")[0];
+        var done = S.records[member] && S.records[member][k];
+        dots += '<div class="day-dot'+(done?' done':'')+'" title="第'+(i+1)+'天 '+k+'"></div>';
+      }
+      return '<div class="member-card">'
+        +'<div class="member-name">'+esc(member)+'</div>'
+        +'<div class="member-days-row-card">'
+        +'<span class="member-days">'+days+' / '+TOTAL_DAYS+' 天</span>'
+        +'<span class="personal-reward-tag'+(earned?' earned':'')+'">'+
+          (earned?'✅ 💰 報名費已達標':'🔒 還差'+(21-days)+'天拿回100元')
+        +'</span></div>'
+        +'<div class="progress-wrap"><div class="progress-track">'
+        +'<div class="progress-fill" style="width:'+pct+'%;background:#22d3ee"></div>'
+        +'<span class="progress-pct">'+Math.round(pct)+'%</span>'
+        +'</div></div>'
+        +'<div class="day-dots">'+dots+'</div>'
+        +'</div>';
+    }).join("");
+
+    return '<div class="team-block">'
+      +'<div class="team-header"><span class="team-name">'+esc(team)+'</span>'
+      +'<span class="team-min-days">全隊最低 '+minDays+' 天</span></div>'
+      +'<div class="team-monster-hp"><span class="team-monster-emoji">👾</span>'
+      +'<div class="team-hp-track"><div class="team-hp-fill" style="width:'+Math.round(bossHPpct)+'%;background:'+bossColor+'"></div></div>'
+      +'<span class="team-hp-label">Boss HP '+Math.round(bossHPpct)+'%</span></div>'
+      +'<div class="reward-banner-wrap">'
+      +'<div class="milestone-bar-wrap"><div class="milestone-track">'
+      +'<div class="milestone-fill" style="width:'+minPct+'%"></div>'
+      +'<div class="milestone-marker'+(minDays>=21?' reached':'')+'" style="left:100%;border-color:'+TEAM_REWARD.color+'"><span class="ms-icon">'+TEAM_REWARD.icon+'</span></div>'
+      +'</div><div class="milestone-labels" style="height:28px">'
+      +'<div class="ms-label'+(minDays>=21?' reached':'')+'" style="left:100%;color:'+TEAM_REWARD.color+'">21天<br>'+TEAM_REWARD.icon+TEAM_REWARD.label+'</div>'
+      +'</div></div>'
+      +'<div class="team-reward-badge'+(teamUnlocked?' unlocked':' locked')+'"'
+      +(teamUnlocked?' style="border-color:'+TEAM_REWARD.color+';color:'+TEAM_REWARD.color+';background:'+TEAM_REWARD.color+'18"':'')+'>'
+      +(teamUnlocked?'✅ 全隊達標！'+TEAM_REWARD.icon+' '+TEAM_REWARD.label
+        :'🔒 全隊都完成21天 → '+TEAM_REWARD.icon+' '+TEAM_REWARD.label+'（還差'+(21-minDays)+'天）')
+      +'</div></div>'
+      +'<div class="members-grid">'+cards+'</div>'
+      +'</div>';
+  }).join("");
+
+  return '<div class="panel"><div class="panel-title">📊 戰況總覽</div>'+blocks+'</div>';
+}
+
+// ── 管理員 ──
+function buildAdmin() {
+  if (!S.adminUnlocked) return '<div class="panel">'
+    +'<div class="panel-title">🔑 管理員審核</div>'
+    +'<div class="admin-login">'
+    +'<input type="password" class="select" placeholder="輸入管理員密碼" '
+    +'oninput="S.adminPw=this.value" onkeydown="if(event.key===\'Enter\')doAdminLogin()">'
+    +'<button class="submit-btn" onclick="doAdminLogin()">解鎖</button>'
+    +'</div></div>';
+
+  var all = allMembers();
+  var totalCI = all.reduce(function(a,m){return a+memberDays(m.name);},0);
+
+  // 排名圖表
+  var teamData = Object.entries(S.teams).map(function(e){
+    var team=e[0], mbs=e[1]||[];
+    var tot=mbs.reduce(function(a,m){return a+memberDays(m);},0);
+    var min=mbs.length?Math.min.apply(null,mbs.map(function(m){return memberDays(m);})):0;
+    return {team:team,members:mbs,totalDays:tot,minDays:min,avgDays:mbs.length?tot/mbs.length:0};
+  }).sort(function(a,b){return b.totalDays-a.totalDays;});
+  var maxTotal = Math.max.apply(null, teamData.map(function(t){return t.totalDays;})||[1]);
+  var medals=["🥇","🥈","🥉"];
+
+  var rankBars = teamData.map(function(td,i){
+    var bg=i===0?"linear-gradient(90deg,#f5a623,#f0532a)":i===1?"linear-gradient(90deg,#a855f7,#6366f1)":"linear-gradient(90deg,#22d3ee,#06b6d4)";
+    return '<div class="rank-row"><div class="rank-medal">'+(medals[i]||"#"+(i+1))+'</div>'
+      +'<div class="rank-team-name">'+esc(td.team)+'</div>'
+      +'<div class="rank-bar-wrap"><div class="rank-bar" style="width:'+(maxTotal?Math.round(td.totalDays/maxTotal*100):0)+'%;background:'+bg+'"></div>'
+      +'<span class="rank-bar-num">'+td.totalDays+' 天</span></div></div>';
+  }).join("");
+
+  var rankRows = teamData.map(function(td,i){
+    var ul=[PERSONAL_REWARD,TEAM_REWARD].filter(function(ms){return td.minDays>=ms.days;});
+    return '<div class="rank-table-row'+(i===0?' rank-first':'')+'">'
+      +'<span>'+(medals[i]||"#"+(i+1))+' '+esc(td.team)+'</span>'
+      +'<span class="rank-num">'+td.totalDays+'</span>'
+      +'<span class="rank-num">'+td.avgDays.toFixed(1)+'</span>'
+      +'<span class="rank-num">'+td.minDays+'</span>'
+      +'<span>'+(ul.length?ul.map(function(ms){return '<span class="reward-chip">'+ms.icon+'</span>';}).join(""):'<span class="no-reward">—</span>')+'</span>'
+      +'</div>';
+  }).join("");
+
+  var memberDayGroups = teamData.map(function(td){
+    var sorted=[].concat(td.members).map(function(m){return {name:m,days:memberDays(m)};}).sort(function(a,b){return b.days-a.days;});
+    var rows=sorted.map(function(m,mi){
+      return '<div class="member-days-row">'
+        +'<span class="member-days-rank">#'+(mi+1)+'</span>'
+        +'<span class="member-days-name">'+esc(m.name)+'</span>'
+        +'<div class="member-days-bar-wrap">'
+        +'<div class="member-days-bar" style="width:'+(m.days/TOTAL_DAYS*100)+'%"></div>'
+        +'<div class="member-days-milestone" style="left:'+(21/TOTAL_DAYS*100)+'%"></div>'
+        +'</div><span class="member-days-num">'+m.days+' 天</span></div>';
+    }).join("");
+    return '<div class="member-days-group"><div class="member-days-team">'+esc(td.team)+'</div>'+rows+'</div>';
+  }).join("");
+
+  // 隊伍管理
+  var teamCards = Object.entries(S.teams).map(function(e){
+    var team=e[0], mbs=e[1]||[];
+    var tags=mbs.map(function(m){
+      return '<div class="team-mgmt-member-tag">'+esc(m)
+        +'<button onclick="deleteMember(\''+esc(team)+'\',\''+esc(m)+'\')">✕</button></div>';
+    }).join("");
+    return '<div class="team-mgmt-card">'
+      +'<div class="team-mgmt-header">'
+      +'<span class="team-mgmt-name">'+esc(team)+'</span>'
+      +'<span class="team-mgmt-count">'+mbs.length+' 人</span>'
+      +'<button class="team-mgmt-del-team" onclick="S.confirmTeam=\''+esc(team)+'\';render()">🗑️ 刪除整隊</button>'
+      +'</div><div class="team-mgmt-members">'+(tags||'<span style="color:var(--muted);font-size:12px">尚無成員</span>')+'</div>'
+      +'<div class="team-mgmt-add-row">'
+      +'<input class="select small" placeholder="輸入成員姓名" '
+      +'value="'+(S.newMemberInputs[team]||"")+'" '
+      +'oninput="S.newMemberInputs[\''+esc(team)+'\']=this.value" '
+      +'onkeydown="if(event.key===\'Enter\')addMember(\''+esc(team)+'\')">'
+      +'<button class="move-btn" onclick="addMember(\''+esc(team)+'\')">＋ 新增</button>'
+      +'</div></div>';
+  }).join("");
+
+  var confirmDialog = S.confirmTeam
+    ? '<div class="confirm-dialog"><span>確定刪除「'+esc(S.confirmTeam)+'」整隊？</span>'
+      +'<div class="confirm-btns">'
+      +'<button class="confirm-yes" onclick="confirmDeleteTeam()">確定刪除</button>'
+      +'<button class="confirm-no" onclick="S.confirmTeam=null;render()">取消</button>'
+      +'</div></div>' : "";
+
+  // 審核
+  var reviews = all.map(function(m){
+    var rec=S.records[m.name]||{};
+    var dates=Object.keys(rec).sort();
+    if(!dates.length) return "";
+    var dayRows=dates.map(function(date){
+      var r=rec[date];
+      var photos=[
+        {key:"photo1",label:"👥 新增群友"},{key:"photo2",label:"🔥 暖群友"},
+        {key:"photo3",label:"📋 市調"},{key:"photo4",label:"🌿 使用產品"}
+      ].map(function(p){
+        return '<div class="admin-photo-wrap"><div class="admin-photo-label">'+p.label+'</div>'
+          +(r[p.key]?'<a href="'+r[p.key]+'" target="_blank"><img src="'+r[p.key]+'" class="admin-photo"/></a>'
+            :'<div class="admin-no-photo">未上傳</div>')+'</div>';
+      }).join("");
+      return '<div class="admin-day"><div class="admin-date-row"><span>📅 '+date+'</span>'
+        +(r.adminMoved?'<span class="moved-badge">已移動</span>':'')
+        +'<button class="delete-btn" onclick="handleDeleteRecord(\''+esc(m.name)+'\',\''+date+'\')">🗑️ 刪除</button>'
+        +'</div><div class="admin-photos">'+photos+'</div></div>';
+    }).join("");
+    return '<details class="admin-member">'
+      +'<summary class="admin-member-title">'+esc(m.name)
+      +' <span class="admin-team-tag">'+esc(m.team)+'</span>'
+      +'<span class="admin-count">'+dates.length+' 天</span></summary>'+dayRows+'</details>';
+  }).join("");
+
+  var memberOpts = Object.entries(S.teams).map(function(e){
+    return '<optgroup label="'+esc(e[0])+'">'+( e[1]||[]).map(function(m){
+      return '<option value="'+esc(m)+'"'+(m===S.editTarget.member?' selected':'')+'>'+esc(m)+'</option>';
+    }).join("")+'</optgroup>';
+  }).join("");
+
+  return '<div class="panel"><div class="panel-title">🔑 管理員審核</div><div class="admin-panel">'
+    // 統計
+    +'<div class="admin-stats">'
+    +'<div class="stat-card"><div class="stat-num">'+all.length+'</div><div class="stat-lbl">總成員</div></div>'
+    +'<div class="stat-card"><div class="stat-num">'+totalCI+'</div><div class="stat-lbl">總打卡次數</div></div>'
+    +'<div class="stat-card"><div class="stat-num">'+Math.round(globalProgress())+'%</div><div class="stat-lbl">全體完成率</div></div>'
+    +'</div>'
+    // 排名圖表
+    +'<div class="chart-section"><div class="section-title">🏆 隊伍排名（總打卡天數）</div>'
+    +'<div class="rank-chart">'+rankBars+'</div>'
+    +'<div class="rank-table"><div class="rank-table-head"><span>隊伍</span><span>總天數</span><span>平均</span><span>最低</span><span>獎勵</span></div>'+rankRows+'</div>'
+    +'<div class="section-title" style="margin-top:20px">👤 各成員完成天數</div>'+memberDayGroups+'</div>'
+    // 隊伍管理
+    +'<div class="team-mgmt-section">'
+    +'<button class="team-mgmt-toggle" onclick="S.teamMgrOpen=!S.teamMgrOpen;render()">👥 隊伍與成員管理 '+(S.teamMgrOpen?'▲':'▼')+'</button>'
+    +(S.teamMgrOpen?'<div class="team-mgmt-body">'+confirmDialog+teamCards
+      +'<div class="team-mgmt-new-team"><div class="field-label">新增隊伍</div>'
+      +'<div class="team-mgmt-add-row">'
+      +'<input class="select small" placeholder="隊伍名稱（例如：🐉 龍隊）" value="'+esc(S.newTeamName)+'" '
+      +'oninput="S.newTeamName=this.value" onkeydown="if(event.key===\'Enter\')addTeam()">'
+      +'<button class="move-btn" onclick="addTeam()">＋ 建立隊伍</button>'
+      +'</div></div></div>':'')
+    +'</div>'
+    // 移動日期
+    +'<div class="admin-move-section"><div class="section-title">🗓️ 移動紀錄日期</div>'
+    +'<div class="admin-move-grid">'
+    +'<div><div class="field-label">成員</div>'
+    +'<select class="select small" onchange="S.editTarget.member=this.value">'
+    +'<option value="">請選擇</option>'+memberOpts+'</select></div>'
+    +'<div><div class="field-label">來源日期</div>'
+    +'<input type="date" class="select small" value="'+S.editTarget.fromDate+'" onchange="S.editTarget.fromDate=this.value"></div>'
+    +'<div><div class="field-label">移至日期</div>'
+    +'<input type="date" class="select small" value="'+S.editTarget.toDate+'" onchange="S.editTarget.toDate=this.value"></div>'
+    +'<div class="move-btn-wrap"><button class="move-btn" onclick="handleMoveDate()">移動</button></div>'
+    +'</div>'
+    +(S.editMsg?'<div class="msg '+(S.editMsg.startsWith('✅')?'success':'error')+'" style="margin-top:8px">'+esc(S.editMsg)+'</div>':'')
+    +'</div>'
+    // 逐人審核
+    +'<div class="section-title">📷 逐人審核</div>'
+    +(reviews||'<div style="color:var(--muted);font-size:13px;padding:20px 0">目前無人打卡</div>')
+    +'</div></div>';
+}
+
+function doAdminLogin() {
+  if (S.adminPw === ADMIN_PW) { S.adminUnlocked=true; render(); }
+  else { alert("密碼錯誤"); }
+}
+
+// 初始 render
+render();
 </script>
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Orbitron:wght@700;900&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a14;--surface:#12121f;--card:#1a1a2e;--border:#2a2a4a;
-  --accent:#f5a623;--accent2:#a855f7;--accent3:#22d3ee;
-  --danger:#e74c3c;--success:#2ecc71;--text:#e8e8f0;--muted:#6b6b8a;
-  --font-head:'Orbitron',sans-serif;--font-body:'Noto Sans TC',sans-serif;
-}
+:root{--bg:#0a0a14;--surface:#12121f;--card:#1a1a2e;--border:#2a2a4a;--accent:#f5a623;--accent2:#a855f7;--accent3:#22d3ee;--danger:#e74c3c;--success:#2ecc71;--text:#e8e8f0;--muted:#6b6b8a;--font-head:'Orbitron',sans-serif;--font-body:'Noto Sans TC',sans-serif}
 body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh}
 #app{position:relative;min-height:100vh}
 .bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(168,85,247,.04)1px,transparent 1px),linear-gradient(90deg,rgba(168,85,247,.04)1px,transparent 1px);background-size:40px 40px;pointer-events:none}
@@ -692,70 +545,52 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
 .hero-desc{color:var(--muted);font-size:14px;margin-bottom:24px}
 .hero-day{margin-top:12px;font-family:var(--font-head);font-size:13px;color:var(--accent3);letter-spacing:1px}
 .monster-hp{display:flex;align-items:center;gap:12px;max-width:480px;margin:0 auto;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
-.monster-emoji{font-size:32px}
-.hp-track{flex:1;height:12px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
-.hp-fill{height:100%;border-radius:6px;transition:width 1s ease}
-.hp-label{font-size:11px;color:var(--muted);white-space:nowrap}
+.monster-emoji{font-size:32px}.hp-track{flex:1;height:12px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.hp-fill{height:100%;border-radius:6px;transition:width 1s ease}.hp-label{font-size:11px;color:var(--muted);white-space:nowrap}
 .tabs{position:relative;z-index:1;display:flex;border-bottom:1px solid var(--border);background:var(--surface)}
-.tab-btn{flex:1;padding:14px 8px;background:none;border:none;color:var(--muted);font-family:var(--font-body);font-size:14px;cursor:pointer;transition:all .2s;border-bottom:2px solid transparent}
-.tab-btn:hover{color:var(--text)}
+.tab-btn{flex:1;padding:14px 8px;background:none;border:none;color:var(--muted);font-family:var(--font-body);font-size:14px;cursor:pointer;border-bottom:2px solid transparent}
 .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
 .main{position:relative;z-index:1;max-width:800px;margin:0 auto;padding:24px 16px 80px}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px}
 .panel-title{font-family:var(--font-head);font-size:18px;color:var(--accent);margin-bottom:20px;letter-spacing:1px}
 .date-badge{background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);color:var(--accent3);padding:8px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;display:inline-block}
-.field{margin-bottom:20px}
-.field-label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:700}
-.select{width:100%;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:15px;outline:none;transition:border .2s}
-.select:focus{border-color:var(--accent2)}
+.field{margin-bottom:20px}.field-label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:700}
+.select{width:100%;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:15px;outline:none}
 .select.small{width:auto;min-width:130px;font-size:13px;padding:8px 12px}
 .already-done{background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);color:var(--success);padding:14px 16px;border-radius:10px;font-size:14px;text-align:center}
 .tasks-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
 @media(max-width:400px){.tasks-grid{grid-template-columns:1fr}}
-.upload-box{background:var(--surface);border:2px dashed var(--border);border-radius:12px;min-height:140px;cursor:pointer;transition:all .2s;overflow:hidden;position:relative}
-.upload-box:hover{border-color:var(--accent2);background:rgba(168,85,247,.06)}
+.upload-box{background:var(--surface);border:2px dashed var(--border);border-radius:12px;min-height:140px;cursor:pointer;overflow:hidden;position:relative}
 .upload-box.uploaded{border-style:solid;border-color:var(--success)}
 .upload-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;height:100%;gap:6px}
-.upload-icon{font-size:32px}
-.upload-label{font-size:13px;font-weight:700;color:var(--text)}
-.upload-hint{font-size:11px;color:var(--muted)}
-.preview-wrap{position:relative;width:100%;height:140px}
-.preview-img{width:100%;height:100%;object-fit:cover;display:block}
+.upload-icon{font-size:32px}.upload-label{font-size:13px;font-weight:700;color:var(--text)}.upload-hint{font-size:11px;color:var(--muted)}
+.preview-wrap{position:relative;width:100%;height:140px}.preview-img{width:100%;height:100%;object-fit:cover;display:block}
 .preview-badge{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);padding:4px 8px;font-size:11px;color:var(--success);text-align:center}
 .remove-btn{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;border-radius:50%;color:#fff;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:22px;text-align:center}
 .task-hint{font-size:12px;color:var(--muted);margin-bottom:20px;padding:10px 12px;background:rgba(255,255,255,.03);border-radius:8px;border-left:3px solid var(--accent2)}
-.submit-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),#f0532a);border:none;border-radius:12px;color:#fff;font-family:var(--font-head);font-size:16px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all .2s}
-.submit-btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(245,166,35,.4)}
+.submit-btn{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),#f0532a);border:none;border-radius:12px;color:#fff;font-family:var(--font-head);font-size:16px;font-weight:700;letter-spacing:1px;cursor:pointer}
 .submit-btn.loading{opacity:.7;cursor:not-allowed}
 .msg{margin-top:12px;padding:12px 16px;border-radius:10px;font-size:14px;text-align:center}
 .msg.success{background:rgba(46,204,113,.12);color:var(--success);border:1px solid rgba(46,204,113,.3)}
 .msg.error{background:rgba(231,76,60,.12);color:var(--danger);border:1px solid rgba(231,76,60,.3)}
-.progress-wrap{margin-bottom:10px}
-.progress-label{font-size:13px;color:var(--text);margin-bottom:4px}
-.progress-track{background:rgba(255,255,255,.06);border-radius:999px;height:10px;position:relative;overflow:hidden}
-.progress-fill{height:100%;border-radius:999px;transition:width 1s ease}
-.progress-pct{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:9px;color:#fff;font-weight:700}
+.progress-wrap{margin-bottom:10px}.progress-track{background:rgba(255,255,255,.06);border-radius:999px;height:10px;position:relative;overflow:hidden}
+.progress-fill{height:100%;border-radius:999px;transition:width 1s ease}.progress-pct{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:9px;color:#fff;font-weight:700}
 .section-title{font-size:14px;font-weight:700;color:var(--muted);margin-bottom:12px}
-.team-monster-hp{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px}
-.team-monster-emoji{font-size:24px}
-.team-hp-track{flex:1;height:10px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
-.team-hp-fill{height:100%;border-radius:6px;transition:width 1s ease}
-.team-hp-label{font-size:11px;color:var(--muted);white-space:nowrap;min-width:70px;text-align:right}
 .team-block{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
 .team-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .team-name{font-family:var(--font-head);font-size:15px;color:var(--accent2);letter-spacing:1px}
 .team-min-days{font-size:13px;color:var(--accent);font-weight:700;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);padding:3px 10px;border-radius:20px}
-.milestone-bar-wrap{position:relative;margin-bottom:36px}
-.milestone-track{position:relative;height:10px;background:rgba(255,255,255,.07);border-radius:999px;overflow:visible}
+.team-monster-hp{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px}
+.team-monster-emoji{font-size:24px}.team-hp-track{flex:1;height:10px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}
+.team-hp-fill{height:100%;border-radius:6px;transition:width 1s ease}.team-hp-label{font-size:11px;color:var(--muted);white-space:nowrap;min-width:70px;text-align:right}
+.milestone-bar-wrap{position:relative;margin-bottom:36px}.milestone-track{position:relative;height:10px;background:rgba(255,255,255,.07);border-radius:999px;overflow:visible}
 .milestone-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#22d3ee,#a855f7);transition:width 1s ease}
-.milestone-marker{position:absolute;top:50%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .3s;z-index:2}
+.milestone-marker{position:absolute;top:50%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;z-index:2}
 .milestone-marker.reached{box-shadow:0 0 10px currentColor;background:var(--card)}
-.ms-icon{line-height:1}
-.milestone-labels{position:relative;height:36px}
-.ms-label{position:absolute;transform:translateX(-50%);font-size:10px;color:var(--muted);text-align:center;top:6px;white-space:nowrap;line-height:1.3;transition:color .3s}
+.ms-icon{line-height:1}.milestone-labels{position:relative;height:36px}
+.ms-label{position:absolute;transform:translateX(-50%);font-size:10px;color:var(--muted);text-align:center;top:6px;white-space:nowrap;line-height:1.3}
 .ms-label.reached{font-weight:700}
 .reward-banner-wrap{margin-bottom:12px}
-.team-reward-badge{display:block;text-align:center;padding:10px 16px;border-radius:10px;border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:700;background:rgba(255,255,255,.03);transition:all .4s}
+.team-reward-badge{display:block;text-align:center;padding:10px 16px;border-radius:10px;border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:700;background:rgba(255,255,255,.03)}
 .team-reward-badge.unlocked{animation:glow-pulse 2s ease-in-out infinite}
 @keyframes glow-pulse{0%,100%{box-shadow:0 0 8px currentColor}50%{box-shadow:0 0 20px currentColor}}
 .members-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
@@ -763,7 +598,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
 .member-name{font-weight:700;font-size:15px;margin-bottom:2px}
 .member-days-row-card{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .member-days{font-size:13px;color:var(--accent3)}
-.personal-reward-tag{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--muted);background:rgba(255,255,255,.03);white-space:nowrap;transition:all .3s}
+.personal-reward-tag{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--muted);background:rgba(255,255,255,.03);white-space:nowrap}
 .personal-reward-tag.earned{border-color:#7c3aed;color:#a855f7;background:rgba(124,58,237,.12);font-weight:700}
 .day-dots{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
 .day-dot{width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.08)}
@@ -771,12 +606,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
 .admin-login{display:flex;flex-direction:column;gap:12px;max-width:320px}
 .admin-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
-.stat-num{font-family:var(--font-head);font-size:28px;color:var(--accent)}
-.stat-lbl{font-size:12px;color:var(--muted);margin-top:4px}
+.stat-num{font-family:var(--font-head);font-size:28px;color:var(--accent)}.stat-lbl{font-size:12px;color:var(--muted);margin-top:4px}
 .chart-section{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:24px}
 .rank-chart{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
-.rank-row{display:flex;align-items:center;gap:10px}
-.rank-medal{font-size:20px;width:28px;text-align:center;flex-shrink:0}
+.rank-row{display:flex;align-items:center;gap:10px}.rank-medal{font-size:20px;width:28px;text-align:center;flex-shrink:0}
 .rank-team-name{font-size:13px;font-weight:700;width:90px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rank-bar-wrap{flex:1;position:relative;height:28px;background:rgba(255,255,255,.05);border-radius:6px;overflow:hidden}
 .rank-bar{height:100%;border-radius:6px;transition:width 1s ease;min-width:2px}
@@ -784,10 +617,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
 .rank-table{border:1px solid var(--border);border-radius:10px;overflow:hidden;font-size:13px;margin-bottom:8px}
 .rank-table-head{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;background:rgba(255,255,255,.06);padding:8px 14px;color:var(--muted);font-size:11px;font-weight:700;gap:8px}
 .rank-table-row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;padding:10px 14px;border-top:1px solid var(--border);gap:8px;align-items:center}
-.rank-table-row.rank-first{background:rgba(245,166,35,.06)}
-.rank-num{font-family:var(--font-head);font-size:14px;color:var(--accent3)}
-.no-reward{color:var(--muted)}
-.reward-chip{font-size:16px;margin-right:2px}
+.rank-table-row.rank-first{background:rgba(245,166,35,.06)}.rank-num{font-family:var(--font-head);font-size:14px;color:var(--accent3)}
+.no-reward{color:var(--muted)}.reward-chip{font-size:16px;margin-right:2px}
 .member-days-group{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px}
 .member-days-team{padding:8px 14px;background:rgba(168,85,247,.08);font-size:12px;font-weight:700;color:var(--accent2);border-bottom:1px solid var(--border)}
 .member-days-row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid rgba(255,255,255,.04)}
@@ -816,8 +647,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
 .team-mgmt-new-team{background:rgba(245,166,35,.05);border:1px dashed rgba(245,166,35,.3);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .admin-move-section{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:12px;padding:16px;margin-bottom:20px}
 .admin-move-grid{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
-.admin-move-grid>div{display:flex;flex-direction:column;gap:6px}
-.move-btn-wrap{justify-content:flex-end}
+.admin-move-grid>div{display:flex;flex-direction:column;gap:6px}.move-btn-wrap{justify-content:flex-end}
 .move-btn{padding:9px 20px;background:linear-gradient(135deg,var(--accent),#f0532a);border:none;border-radius:8px;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
 .admin-date-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:10px;flex-wrap:wrap}
 .moved-badge{font-size:10px;background:rgba(245,166,35,.15);color:var(--accent);padding:2px 6px;border-radius:4px}
@@ -828,21 +658,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
 .admin-team-tag{font-size:11px;color:var(--muted);font-weight:400}
 .admin-count{margin-left:auto;font-size:12px;color:var(--accent3);background:rgba(34,211,238,.1);padding:2px 8px;border-radius:6px}
 .admin-day{padding:12px 16px;border-top:1px solid var(--border)}
-.admin-date{font-size:13px;color:var(--muted);margin-bottom:10px}
 .admin-photos{display:flex;gap:12px;flex-wrap:wrap}
-.admin-photo-wrap{flex:1;min-width:100px}
-.admin-photo-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.admin-photo-wrap{flex:1;min-width:100px}.admin-photo-label{font-size:11px;color:var(--muted);margin-bottom:4px}
 .admin-photo{width:100%;border-radius:6px;object-fit:cover;max-height:120px;display:block}
 .admin-no-photo{background:rgba(255,255,255,.04);border:1px dashed var(--border);border-radius:6px;padding:20px;text-align:center;font-size:11px;color:var(--muted)}
 .admin-panel{}
 .footer{position:relative;z-index:1;text-align:center;padding:20px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
 </style>
-</head>
-<body>
-<div id="app"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;font-family:sans-serif">
-  <div style="font-size:64px;animation:bounce .6s infinite alternate">👾</div>
-  <div style="font-size:20px;color:#6b6b8a">載入戰場中...</div>
-</div></div>
-<style>@keyframes bounce{to{transform:translateY(-12px)}}</style>
 </body>
 </html>
