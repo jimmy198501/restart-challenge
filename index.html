@@ -9,25 +9,27 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, set, get, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { getStorage, ref as sRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+// Cloudinary 處理照片，不需要 Firebase Storage
 
 // ════════════════════════════════════════════
 //  ★★★ 請把下面換成你的 Firebase 設定 ★★★
 // ════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey: "AIzaSyCrgMfdn79JOKx4XKA4hNwNZkhNACoizT4",
-  authDomain: "restart-challenge-2026.firebaseapp.com",
-  databaseURL: "https://restart-challenge-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "restart-challenge-2026",
-  storageBucket: "restart-challenge-2026.firebasestorage.app",
+  apiKey:            "AIzaSyCrgMfdn79JOKx4XKA4hNwNZkhNACoizT4",
+  authDomain:        "restart-challenge-2026.firebaseapp.com",
+  databaseURL:       "https://restart-challenge-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "restart-challenge-2026",
+  storageBucket:     "restart-challenge-2026.firebasestorage.app",
   messagingSenderId: "477447792834",
-  appId: "1:477447792834:web:c657ca4d3e612d1ccf335b"
+  appId:             "1:477447792834:web:c657ca4d3e612d1ccf335b"
 };
 // ════════════════════════════════════════════
 
 const app     = initializeApp(firebaseConfig);
 const db      = getDatabase(app);
-const storage = getStorage(app);
+// ── Cloudinary 設定 ──
+const CLOUDINARY_CLOUD = "dv2dmadr9";
+const CLOUDINARY_PRESET = "restart_challenge";
 
 // ── 常數 ──
 const ADMIN_PW       = "jimmy0117";
@@ -95,11 +97,19 @@ function globalProgress() {
   return (all.reduce((a, m) => a + memberDays(m.name), 0) / (all.length * TOTAL_DAYS)) * 100;
 }
 
-// ── 上傳照片到 Firebase Storage ──
+// ── 上傳照片到 Cloudinary ──
 async function uploadPhoto(file, path) {
-  const r = sRef(storage, path);
-  await uploadBytes(r, file);
-  return getDownloadURL(r);
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_PRESET);
+  formData.append("folder", path.replace(/\/[^\/]+$/, "")); // 用資料夾組織
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+    { method: "POST", body: formData }
+  );
+  const data = await res.json();
+  if (!data.secure_url) throw new Error(data.error?.message || "上傳失敗");
+  return data.secure_url;
 }
 
 // ── 提交任務 ──
