@@ -270,7 +270,7 @@ function buildHTML() {
           ${photoPreview("photo4","使用產品","🌿")}
         </div>
         <div class="task-hint">💡 市調：居家購物清單 · 強連結 · 商展 · 評估　｜　🌿 使用產品：放群組照片或影片＋寫下感受</div>
-        <button class="submit-btn ${submitting?"loading":""}" onclick="handleSubmit()" ${submitting?"disabled":""}>
+        <button class="submit-btn ${submitting?"loading":""}" data-action="handleSubmit" ${submitting?"disabled":""}>
           ${submitting ? "上傳中..." : "⚔️ 完成今日任務！打怪！"}
         </button>
         ${submitMsg ? `<div class="msg ${submitMsg.startsWith("🎉")?"success":"error"}">${submitMsg}</div>` : ""}
@@ -362,7 +362,7 @@ function buildHTML() {
         <input type="password" class="select" placeholder="輸入管理員密碼"
           value="${adminPw}" onchange="setState('adminPw',this.value)"
           onkeydown="if(event.key==='Enter')tryAdminLogin()" />
-        <button class="submit-btn" onclick="tryAdminLogin()">解鎖</button>
+        <button class="submit-btn" data-action="tryAdminLogin">解鎖</button>
       </div></div>`;
 
     const allMbs = allMembers();
@@ -453,7 +453,7 @@ function buildHTML() {
     const confirmDialog = confirmTeam ? `<div class="confirm-dialog">
       <span>確定刪除「${confirmTeam}」整隊？此操作無法復原。</span>
       <div class="confirm-btns">
-        <button class="confirm-yes" onclick="confirmDeleteTeam()">確定刪除</button>
+        <button class="confirm-yes" data-action="confirmDeleteTeam">確定刪除</button>
         <button class="confirm-no" onclick="setState('confirmTeam',null)">取消</button>
       </div></div>` : "";
 
@@ -534,7 +534,7 @@ function buildHTML() {
                   value="${newTeamName}"
                   oninput="setState('newTeamName',this.value)"
                   onkeydown="if(event.key==='Enter')addTeam()" />
-                <button class="move-btn" onclick="addTeam()">＋ 建立隊伍</button>
+                <button class="move-btn" data-action="addTeam">＋ 建立隊伍</button>
               </div>
             </div>
           </div>` : ""}
@@ -560,7 +560,7 @@ function buildHTML() {
                 onchange="setEditTarget('toDate',this.value)" />
             </div>
             <div class="move-btn-wrap">
-              <button class="move-btn" onclick="handleMoveDate()">移動</button>
+              <button class="move-btn" data-action="handleMoveDate">移動</button>
             </div>
           </div>
           ${editMsg ? `<div class="msg ${editMsg.startsWith("✅")?"success":"error"}" style="margin-top:8px">${editMsg}</div>` : ""}
@@ -631,8 +631,22 @@ window.tryAdminLogin     = () => {
   else alert("密碼錯誤");
 };
 
-// 初始 render
-render();
+// ── 事件委派：處理所有動態按鈕的 click（解決 module script timing 問題）──
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const arg1   = btn.dataset.arg1 || "";
+  const arg2   = btn.dataset.arg2 || "";
+  if (window[action]) window[action](arg1, arg2);
+});
+
+// 初始 render — 等 DOM ready 再執行
+document.addEventListener("DOMContentLoaded", () => {
+  render();
+});
+// 若 DOM 已經 ready（module 有時候晚載入）
+if (document.readyState !== "loading") render();
 </script>
 
 <style>
