@@ -194,16 +194,38 @@ var S={tab:"submit",teams:{},records:{},adminOk:false,adminPw:"",
 
 // 預設隊伍（若 Firebase 沒有資料則寫入）
 var DEFAULT_TEAMS = {
-  "金華隊": ["金華","俊達","明樺"],
-  "香綺隊": ["香綺","香君","淑玲"],
-  "小原隊": ["小原","儀均","智齡"]
+  "小原A隊（玉樹臨風）": ["冠余","郁芬","夙敏"],
+  "小原B隊（玉樹臨風）": ["雯雯","馬姊","佳琪"],
+  "小原C隊（玉樹臨風）": ["淑玲","薏蕙","育婷"],
+  "金華A隊（搶搶滾吃牛排）": ["yoyo","芷吟","李心怡"],
+  "金華B隊": ["智齡","孟臻","翠韻"],
+  "金華C隊": ["1000","羽彤","淑芳"],
+  "香綺A隊": ["欣瑜","蔡心怡","Cherry"],
+  "香綺B隊": ["明樺","尉雯","雅瑜"],
+  "香綺C隊": ["宥伶","依庭","小瑜"],
+  "Peggy_A隊": ["秋丰","阿真","宜樺"],
+  "Peggy_B隊": ["俊達","偉庭","昱澄"],
+  "Peggy_C隊": ["慧君","小凱西","婉芸"],
+  "儀均A隊": ["淑芬","虹琳","瓊慧"],
+  "儀均B隊": ["孟妤","巧如","芳萍"],
+  "儀均C隊": ["蕙嬑","伯鍾","筱珮"],
+  "維婉A隊": ["香君","愷旎","筱晏"],
+  "維婉B隊": ["書帆","麗玲","千祝"],
+  "維婉C隊": ["彩涵","珮鵑","虹玫"]
 };
 
 // Firebase 監聽
+var TEAMS_VERSION = "v2"; // 改這個版本號就會強制更新隊伍
+DB.ref("teams_version").once("value", function(vs){
+  if(vs.val() !== TEAMS_VERSION){
+    // 版本不同，強制寫入新名單
+    DB.ref("teams").set(DEFAULT_TEAMS);
+    DB.ref("teams_version").set(TEAMS_VERSION);
+  }
+});
 DB.ref("teams").on("value",function(s){
   var val = s.val();
   if(!val || Object.keys(val).length === 0){
-    // 第一次：寫入預設隊伍
     DB.ref("teams").set(DEFAULT_TEAMS);
   } else {
     S.teams = val;
