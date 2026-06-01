@@ -211,11 +211,13 @@ var DEFAULT_TEAMS = {
   "儀均C隊": ["蕙嬑","伯鍾","筱珮"],
   "維婉A隊": ["香君","愷旎","筱晏"],
   "維婉B隊": ["書帆","麗玲","千祝"],
-  "維婉C隊": ["彩涵","珮鵑","虹玫"]
+  "維婉C隊": ["彩涵","珮鵑","虹玫"],
+  "媽祖婆隊(BOSS)": ["小原","凱西","金華"],
+  "PNA隊(BOSS)": ["Peggy","維婉","儀均"]
 };
 
 // Firebase 監聽
-var TEAMS_VERSION = "v2"; // 改這個版本號就會強制更新隊伍
+var TEAMS_VERSION = "v3"; // 改這個版本號就會強制更新隊伍
 DB.ref("teams_version").once("value", function(vs){
   if(vs.val() !== TEAMS_VERSION){
     // 版本不同，強制寫入新名單
